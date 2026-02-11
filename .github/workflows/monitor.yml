@@ -1,0 +1,56 @@
+name: 汉中舆情监测
+
+# ━━━ 定时配置（UTC时间，北京时间-8小时）━━━
+on:
+  schedule:
+    # 北京时间 08:00 = UTC 00:00
+    - cron: '0 0 * * *'
+    # 北京时间 14:00 = UTC 06:00
+    - cron: '0 6 * * *'
+    # 北京时间 20:00 = UTC 12:00
+    - cron: '0 12 * * *'
+
+  # 也可以手动触发（方便测试）
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      # 1. 拉代码
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # 2. 装 Python
+      - name: 安装 Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      # 3. 装依赖
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      # 4. 运行监测
+      - name: 运行舆情监测
+        env:
+          WEIBO_COOKIE: ${{ secrets.WEIBO_COOKIE }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+        run: python main.py
+
+      # 5. 保存结果文件（可选，在GitHub上也能下载）
+      - name: 保存结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "舆情报告-${{ github.run_number }}"
+          path: |
+            汉中舆情_*.csv
+            汉中舆情_*.json
+          retention-days: 30
