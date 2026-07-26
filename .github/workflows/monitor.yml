@@ -2,7 +2,7 @@ name: 汉中舆情监测
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # 北京时间 04:00（UTC 20:00）
+    - cron: '0 20 * * *'   # 北京时间 23:00
   workflow_dispatch:
 
 jobs:
@@ -22,6 +22,19 @@ jobs:
 
       - name: 安装依赖
         run: pip install -r requirements.txt
+
+      # transformer 情感模型：依赖与模型均有缓存，仅首次运行慢几分钟。
+      # 模型下载失败时代码会自动降级到内置 lite 词典引擎，不会中断日报。
+      - name: 安装情感模型依赖（CPU版torch，有pip缓存）
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers
+
+      - name: 缓存情感模型（首次下载约400MB，之后秒级恢复）
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-erlangshen-sentiment-v1
 
       # 恢复跨天 seen 状态（cache key 不可复用，用 restore-keys 取最近一次）
       - name: 恢复历史状态
