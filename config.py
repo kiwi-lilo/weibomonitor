@@ -1,51 +1,69 @@
+"""config.py — 运行配置（环境变量集中读取 + 校验）"""
+
 from __future__ import annotations
 
-"""
-config.py — 央媒名单与涉陕检索配置
-"""
+import os
+from dataclasses import dataclass, field
+from zoneinfo import ZoneInfo
 
-# ══════════════════════════════════════════════
-#  目标中央媒体（包含常用简称）
-# ══════════════════════════════════════════════
-TARGET_MEDIA = {
-    "人民日报": ["人民日报"],
-    "经济日报": ["经济日报"],
-    "光明日报": ["光明日报"],
-    "中国青年报": ["中国青年报", "中青报"],
-    "新华每日电讯": ["新华每日电讯"],
-    "人民网": ["人民网"],
-    "新华网": ["新华网"],
-    "中国经济网": ["中国经济网"],
-    "央视网": ["央视网", "央视新闻"],
-    "央广网": ["央广网"],
-    "中国新闻网": ["中国新闻网", "中新网"],
-}
+def _load_dotenv() -> None:
+    """加载项目根目录 .env（KEY=VALUE 每行一条；不覆盖已有环境变量）"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-# ══════════════════════════════════════════════
-#  检索关键词配置 (涉陕)
-# ══════════════════════════════════════════════
-# 陕西及主要地市，确保不漏报
-SHAANXI_KEYWORDS = [
-    "陕西", "西安", "咸阳", "宝鸡", "渭南", 
-    "延安", "榆林", "汉中", "安康", "商洛", "铜川", "杨凌"
-]
 
-def build_queries():
-    # type: () -> list
-    """生成搜索组合：媒体名称 + 陕西关键词"""
-    queries = []
-    # 为了提高搜索精准度，直接搜索： "人民日报 陕西", "新华网 西安" 等
-    for media in TARGET_MEDIA.keys():
-        queries.append(f"{media} 陕西")
-        queries.append(f"{media} 西安")
-    return queries
+_load_dotenv()
 
-# ══════════════════════════════════════════════
-#  新闻标签/分类词库 (用于自动给新闻打标签)
-# ══════════════════════════════════════════════
-NEWS_CATEGORIES = {
-    "💼 经济/产业": ["经济", "产业", "高质量发展", "项目", "投资", "企业", "产值", "农业", "工业", "新能源"],
-    "🌸 文旅/生态": ["旅游", "文化", "生态", "秦岭", "黄河", "非遗", "景区", "文物", "博物馆", "绿化"],
-    "👥 民生/社会": ["民生", "教育", "医疗", "就业", "群众", "社区", "交通", "天气", "暴雨", "救援"],
-    "⭐ 时政/党建": ["会议", "强调", "调研", "党建", "干部", "落实", "精神", "视察", "改革"],
-}
+TZ = ZoneInfo("Asia/Shanghai")  # 全项目统一北京时间，避免 Actions 的 UTC 时钟造成日期偏移
+
+STATE_FILE = os.environ.get("STATE_FILE", "state/seen.json")
+SEEN_MAX = 20000          # seen 列表最多保留多少条 id
+MAX_PAGES = int(os.environ.get("MAX_PAGES", "1"))  # 每个搜索组合翻几页
+DAYS_BACK = 2             # 监测最近 N 天
+
+
+def _split_receivers(raw: str) -> list[str]:
+    return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+@dataclass
+class Settings:
+    cookie: str = field(default_factory=lambda: os.environ.get("WEIBO_COOKIE", ""))
+
+    smtp_server: str = field(default_factory=lambda: os.environ.get("SMTP_SERVER", "smtp.qq.com"))
+    smtp_port: int = field(default_factory=lambda: int(os.environ.get("SMTP_PORT", "465")))
+    email_sender: str = field(default_factory=lambda: os.environ.get("EMAIL_SENDER", ""))
+    email_password: str = field(default_factory=lambda: os.environ.get("EMAIL_PASSWORD", ""))
+    email_receivers: list[str] = field(
+        default_factory=lambda: _split_receivers(os.environ.get("EMAIL_RECEIVERS", ""))
+    )
+
+    # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配则退回纯词库研判
+    llm_api_base: str = field(default_factory=lambda: os.environ.get("LLM_API_BASE", ""))
+    llm_api_key: str = field(default_factory=lambda: os.environ.get("LLM_API_KEY", ""))
+    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
+
+    @property
+    def email_ready(self) -> bool:
+        return bool(self.email_sender and self.email_password and self.email_receivers)
+
+    @property
+    def llm_ready(self) -> bool:
+        return bool(self.llm_api_base and self.llm_api_key and self.llm_model)
+
+    def validate(self) -> list[str]:
+        """返回配置问题列表（空列表 = 通过）"""
+        problems = []
+        if not self.cookie:
+            problems.append("未配置 WEIBO_COOKIE")
+        if not self.email_ready:
+            problems.append("邮件配置不完整（SENDER/PASSWORD/RECEIVERS），将跳过发信")
+        return problems
