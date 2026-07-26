@@ -132,3 +132,78 @@ def test_dedup_by_id():
     w2.id = "1"  # 同 id 不同文本 → 只收一条
     assert m._add(w1)
     assert not m._add(w2)
+
+
+# ── 本地模型融合逻辑（注入假打分器测试，不依赖真模型） ──
+
+def test_model_refine_fusion():
+    import analyzer, local_model
+    ws = [
+        _w("汉中天汉大道修了三年了还没修好，每天上班绕路，真的服了"),       # 词库漏报（无关键词）
+        _w("汉中今天天气不错，去汉江边散步很舒服"),                          # 真中性
+        _w("城固县这家店态度恶劣，乱收费，避雷"),                            # 词库判负、模型也判负 → 保持
+        _w("汉中办事拖延？不存在的，今天去政务大厅体验特别好，点个赞"),      # 词库可能误报、模型判正 → 降级
+    ]
+    for w in ws:
+        analyzer.analyze(w)
+    assert ws[0].sentiment_label == "中性"          # 词库确实漏了
+    fake_scores = [0.97, 0.30, 0.95, 0.05]
+    orig_st, orig_av = local_model.score_texts, local_model.available
+    local_model.score_texts = lambda texts, **k: fake_scores[:len(texts)]
+    local_model.available = lambda: True
+    try:
+        changed = analyzer.model_refine(ws)
+    finally:
+        local_model.score_texts, local_model.available = orig_st, orig_av
+    assert ws[0].sentiment_label == "关注", "模型高置信负面应补上词库漏报"
+    assert ws[0].model_score == 0.97
+    assert ws[1].sentiment_label == "中性", "低置信不应干预"
+    assert ws[2].sentiment_label in ("负面", "偏负面"), "两边一致时保持"
+    if ws[3].sentiment_label in ("偏负面", "关注"):
+        raise AssertionError("模型高置信正面应消除词库误报: " + ws[3].sentiment_label)
+    assert changed >= 1
+
+
+def test_model_unavailable_graceful():
+    """transformer 未安装时降级到 lite 引擎；强负面词命中的结论不被降级"""
+    import analyzer, local_model
+    w = _w("汉中某小区烂尾，交了钱不交房，投诉无门求扩散")
+    analyzer.analyze(w)
+    assert w.sentiment_label == "负面" and w.strong_neg
+    orig = local_model.available
+    local_model.available = lambda: False
+    try:
+        analyzer.model_refine([w])
+    finally:
+        local_model.available = orig
+    assert w.sentiment_label == "负面", "有强负面词命中时任何引擎都不得降级"
+    assert w.model_score is not None, "lite 引擎应已打分"
+
+
+def test_lite_engine_end_to_end():
+    """未安装 torch 时应自动降级到 lite 引擎并完成双向修正"""
+    import analyzer, local_model
+    ws = [
+        _w("汉中天汉大道修了三年还没修好，每天绕路上班真的服了！！"),   # 词库漏报
+        _w("问题已解决，感谢相关部门高效处理"),                          # 词库因'问题'可能误判
+        _w("今天去汉江边散步，天气很舒服"),                              # 真中性
+    ]
+    for w in ws:
+        analyzer.analyze(w)
+    orig = local_model.available
+    local_model.available = lambda: False       # 模拟未装 torch
+    try:
+        analyzer.model_refine(ws)
+    finally:
+        local_model.available = orig
+    assert ws[0].sentiment_label == "关注", (ws[0].sentiment_label, ws[0].model_score)
+    assert ws[1].sentiment_label in ("中性", "正面"), (ws[1].sentiment_label, ws[1].model_score)
+    assert ws[2].sentiment_label in ("中性", "正面")
+    assert all(w.model_score is not None for w in ws)
+
+
+def test_lite_scorer_directly():
+    from lite_sentiment import score_texts
+    s = score_texts(["小区电梯坏了半个月物业一直没人管，投诉了也白投诉",
+                     "政务大厅办事效率很高，工作人员态度特别好，点赞"])
+    assert s[0] > 0.75 and s[1] < 0.35, s
