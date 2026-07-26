@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import TZ
 from wb_parser import parse_time, within_days, clean_text
 from analyzer import analyze, is_official
+from cities import HANZHONG
 from models import Weibo
 
 
@@ -60,33 +61,33 @@ def test_clean_text():
 def test_youyu_not_negative():
     """v4 最大误报源：中性连词"由于"曾在强负面词库里"""
     w = _w("由于近期下雨，汉中的桂花开得晚了一些，大家周末可以去看看")
-    analyze(w)
+    analyze(w, HANZHONG)
     assert w.sentiment_label in ("中性", "正面"), w.sentiment_label
 
 
 def test_enforcement_news_not_negative():
     """警方整治新闻含'黑恶势力'不应判负面（正面语境否决）"""
     w = _w("汉中警方开展扫黑除恶专项行动，严厉打击黑恶势力，专项整治取得成效，市民纷纷点赞")
-    analyze(w)
+    analyze(w, HANZHONG)
     assert w.sentiment_label != "负面", (w.sentiment_label, w.strong_neg, w.positive_ctx)
 
 
 def test_real_complaint_is_negative():
     w = _w("汉中某小区烂尾三年，我们交了钱不交房，血汗钱打了水漂，投诉无门，没人管，求扩散！")
-    analyze(w)
+    analyze(w, HANZHONG)
     assert w.sentiment_label == "负面"
     assert w.strong_neg
 
 
 def test_medium_complaint():
     w = _w("城固县政务大厅办事难，工作人员态度恶劣，来回踢皮球")
-    analyze(w)
+    analyze(w, HANZHONG)
     assert w.sentiment_label in ("负面", "偏负面")
 
 
 def test_region_tagging():
     w = _w("南郑区某小区烂尾了，交了钱不交房，业主走投无路")
-    analyze(w)
+    analyze(w, HANZHONG)
     assert "南郑区" in w.regions
 
 
@@ -122,9 +123,9 @@ def test_two_phrases_filtered():
 # ── 去重 ──
 
 def test_dedup_by_id():
-    from main import Monitor
-    from config import Settings
-    m = Monitor.__new__(Monitor)
+    from main import CityMonitor
+    m = CityMonitor.__new__(CityMonitor)
+    m.city = HANZHONG
     m.seen_ids, m.seen_fp = set(), set()
     m.results, m.filtered = [], []
     w1 = _w("汉中某小区烂尾了，交了钱不交房，业主走投无路，求扩散")
@@ -145,7 +146,7 @@ def test_model_refine_fusion():
         _w("汉中办事拖延？不存在的，今天去政务大厅体验特别好，点个赞"),      # 词库可能误报、模型判正 → 降级
     ]
     for w in ws:
-        analyzer.analyze(w)
+        analyzer.analyze(w, HANZHONG)
     assert ws[0].sentiment_label == "中性"          # 词库确实漏了
     fake_scores = [0.97, 0.30, 0.95, 0.05]
     orig_st, orig_av = local_model.score_texts, local_model.available
@@ -168,7 +169,7 @@ def test_model_unavailable_graceful():
     """transformer 未安装时降级到 lite 引擎；强负面词命中的结论不被降级"""
     import analyzer, local_model
     w = _w("汉中某小区烂尾，交了钱不交房，投诉无门求扩散")
-    analyzer.analyze(w)
+    analyzer.analyze(w, HANZHONG)
     assert w.sentiment_label == "负面" and w.strong_neg
     orig = local_model.available
     local_model.available = lambda: False
@@ -189,7 +190,7 @@ def test_lite_engine_end_to_end():
         _w("今天去汉江边散步，天气很舒服"),                              # 真中性
     ]
     for w in ws:
-        analyzer.analyze(w)
+        analyzer.analyze(w, HANZHONG)
     orig = local_model.available
     local_model.available = lambda: False       # 模拟未装 torch
     try:
@@ -207,3 +208,32 @@ def test_lite_scorer_directly():
     s = score_texts(["小区电梯坏了半个月物业一直没人管，投诉了也白投诉",
                      "政务大厅办事效率很高，工作人员态度特别好，点赞"])
     assert s[0] > 0.75 and s[1] < 0.35, s
+
+
+# ── 同名地名消歧（西乡问题） ──
+
+from cities import XIAN
+
+
+def test_shenzhen_xixiang_rejected():
+    """深圳宝安西乡街道的投诉不应算作汉中西乡县"""
+    for t in ("深圳西乡这边的中介太黑了，押金不退，投诉无门",
+              "宝安西乡街道乱收费没人管，曝光一下",
+              "南宁西乡塘区半夜施工扰民，投诉了也不处理"):
+        assert not HANZHONG.match_regions(t), t
+
+
+def test_hanzhong_xixiang_kept():
+    """真·汉中西乡的帖子要保留，含异地打工提及老家的场景"""
+    for t in ("西乡县樱桃沟的路修了三年还没修好，没人管吗",
+              "汉中西乡的物业乱收费，向谁投诉",
+              "在深圳打工，老家西乡县的宅基地被占了，投诉无门"):
+        r = HANZHONG.match_regions(t)
+        assert "西乡县" in r, (t, r)
+
+
+def test_xian_changan_disambiguation():
+    """长安汽车/长安街噪声排除，西安长安区保留"""
+    assert not XIAN.match_regions("长安汽车4S店太坑了，避雷，强制消费")
+    assert "长安区" in XIAN.match_regions("西安长安区的公交太难等了，投诉没用")
+    assert "长安区" in XIAN.match_regions("长安区韦曲街道垃圾遍地没人管")
