@@ -1,29 +1,41 @@
-name: 央媒涉陕报道早报
+name: 汉中舆情监测
 
 on:
   schedule:
-    # 每天 UTC 23:00 执行，即北京时间早上 07:00
-    - cron: '0 23 * * *'
+    - cron: '0 20 * * *'   # 北京时间 04:00（UTC 20:00）
   workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
 
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 安装 Python 3.8
+      - name: 安装 Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: '3.12'
+          cache: pip
 
       - name: 安装依赖
-        run: pip install requests
+        run: pip install -r requirements.txt
 
-      - name: 运行早报生成
+      # 恢复跨天 seen 状态（cache key 不可复用，用 restore-keys 取最近一次）
+      - name: 恢复历史状态
+        uses: actions/cache/restore@v4
+        with:
+          path: state/seen.json
+          key: seen-${{ github.run_id }}
+          restore-keys: |
+            seen-
+
+      - name: 单元测试
+        run: pip install pytest && pytest tests/ -q
+
+      - name: 运行舆情监测
         env:
           WEIBO_COOKIE: ${{ secrets.WEIBO_COOKIE }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
@@ -31,12 +43,26 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+          # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: python main.py
 
-      - name: 保存结果文件
+      - name: 保存历史状态
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state/seen.json
+          key: seen-${{ github.run_id }}
+
+      - name: 上传结果
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: "央媒涉陕新闻早报"
-          path: "*.csv"
+          name: "舆情报告-${{ github.run_number }}"
+          path: |
+            *舆情_*.csv
+            *舆情_*.json
           retention-days: 30
+          if-no-files-found: ignore
