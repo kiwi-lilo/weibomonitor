@@ -21,7 +21,7 @@ LABEL_COLORS = {"负面": "#e74c3c", "偏负面": "#e67e22", "关注": "#f1c40f"
                 "中性": "#95a5a6", "正面": "#2ecc71"}
 
 CSV_FIELDS = ["time", "user", "user_type", "verified", "followers", "text",
-              "sentiment_label", "sentiment_score", "llm_reason", "regions",
+              "sentiment_label", "sentiment_score", "model_score", "llm_reason", "regions",
               "strong_neg", "medium_neg", "mild_neg", "positive_ctx",
               "heat", "reposts", "comments", "likes", "is_new", "url", "keyword"]
 

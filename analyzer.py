@@ -90,6 +90,52 @@ def analyze(w: Weibo) -> None:
                  if any(kw in text for kw in kws) and name != CITY_NAME] or [CITY_NAME]
 
 
+# ══════════════ 可选：本地模型复核（免费） ══════════════
+
+# 融合阈值：只在引擎较确信时才推翻词库结论。lite 打分器分布更居中，阈值略宽。
+THRESHOLDS = {
+    "transformer": (0.90, 0.10),   # (升级阈值, 降级阈值)
+    "lite":        (0.82, 0.15),
+}
+
+
+def model_refine(results: list[Weibo]) -> int:
+    """本地情感引擎对全部结果打分并与词库结论融合。返回修正条数。
+
+    引擎优先级：transformer 模型（装了 torch/transformers 才启用）
+              → lite 词典打分器（零依赖，始终可用）
+    """
+    if not results:
+        return 0
+    import local_model
+    import lite_sentiment
+    scores, engine = None, "transformer"
+    if local_model.available():
+        scores = local_model.score_texts([w.text for w in results])
+        if scores is not None:
+            log.info("情感引擎: transformer (%s)", local_model.MODEL_NAME)
+    if scores is None:
+        scores = lite_sentiment.score_texts([w.text for w in results])
+        engine = "lite"
+        log.info("情感引擎: lite 词典打分器")
+    up_th, down_th = THRESHOLDS[engine]
+    changed = 0
+    for w, p_neg in zip(results, scores):
+        w.model_score = round(p_neg, 3)
+        if w.sentiment_label == "中性" and p_neg >= up_th:
+            w.sentiment_label, w.sentiment_score = "关注", 0.4
+            changed += 1
+            log.info("模型补漏 → 关注 (p=%.2f): %s…", p_neg, w.text[:40])
+        elif (w.sentiment_label in ("偏负面", "关注") or
+              (w.sentiment_label == "负面" and not w.strong_neg)) and p_neg <= down_th:
+            w.sentiment_label, w.sentiment_score = "中性", 0.5
+            changed += 1
+            log.info("模型消误报 → 中性 (p=%.2f): %s…", p_neg, w.text[:40])
+    if changed:
+        log.info("本地模型共修正 %d 条", changed)
+    return changed
+
+
 # ══════════════ 可选：LLM 复核 ══════════════
 
 _LLM_SYSTEM = (

@@ -21,7 +21,7 @@ from config import Settings, TZ, MAX_PAGES, DAYS_BACK
 from keywords import build_queries, ALL_REGION_KW, SEARCH_DISTRICTS, CITY_SHORT
 from models import Weibo
 from fetcher import build_session, search_mobile, search_general, Health, Status
-from analyzer import is_official, analyze, llm_refine
+from analyzer import is_official, analyze, llm_refine, model_refine
 from state import load_seen, save_seen
 from reporter import print_report, save_files, build_html_report, build_alert_html
 from mailer import send_email
@@ -152,10 +152,13 @@ class Monitor:
             w.is_new = w.id not in historical
         save_seen(historical | {w.id for w in self.results})
 
+        # 可选：本地模型复核全部结果（免费，装了 torch/transformers 即启用）
+        model_refine(self.results)
+
         negatives = [w for w in self.results if w.is_negative]
         new_negatives = [w for w in negatives if w.is_new]
 
-        # 可选：LLM 复核新增负面候选，再重算
+        # 可选：LLM 复核新增负面候选（配置了 LLM_API_* 时覆盖模型结论），再重算
         llm_refine(new_negatives, self.settings)
         negatives = [w for w in self.results if w.is_negative]
         new_negatives = [w for w in negatives if w.is_new]
