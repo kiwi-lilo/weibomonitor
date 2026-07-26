@@ -24,8 +24,8 @@ _load_dotenv()
 
 TZ = ZoneInfo("Asia/Shanghai")  # 全项目统一北京时间，避免 Actions 的 UTC 时钟造成日期偏移
 
-STATE_FILE = os.environ.get("STATE_FILE", "state/seen.json")
-SEEN_MAX = 20000          # seen 列表最多保留多少条 id
+STATE_DIR = os.environ.get("STATE_DIR", "state")
+SEEN_MAX = 20000          # 每个城市 seen 列表最多保留多少条 id
 MAX_PAGES = int(os.environ.get("MAX_PAGES", "1"))  # 每个搜索组合翻几页
 DAYS_BACK = 2             # 监测最近 N 天
 

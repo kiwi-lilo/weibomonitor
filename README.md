@@ -1,4 +1,4 @@
-# 汉中市微博舆情监测 v5
+# 陕西多市微博舆情监测 v5
 
 每日定时搜索微博上关于汉中市及各区县的负面民生反馈，研判分级后邮件推送日报。
 
@@ -25,6 +25,11 @@ pytest tests/ -v                    # 跑测试
 ## GitHub Actions
 配置 Secrets：`WEIBO_COOKIE`、`SMTP_SERVER`、`SMTP_PORT`、`EMAIL_SENDER`、`EMAIL_PASSWORD`、`EMAIL_RECEIVERS`，可选 `LLM_API_*`。
 默认每天北京时间 23:00 运行，也可手动触发。
+
+## 增删城市
+编辑 `cities.py` 的 `CITIES` 列表即可。已内置汉中、西安、宝鸡、咸阳，
+文件里另附榆林/安康等备选的说明。每个城市自动各发一节报告、各存一份跨天状态。
+当前 4 市每天约 46 分钟，GitHub 私有仓库 2000 分钟/月额度充裕。
 
 ## 词库维护
 全部在 `keywords.py`。原则：搜索词求召回、研判词求精准；改完跑一遍测试防回归。

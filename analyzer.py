@@ -15,10 +15,10 @@ import requests
 
 from config import Settings
 from models import Weibo
+from cities import City
 from keywords import (
-    CITY_NAME,
     OFFICIAL_NAME_STRONG, OFFICIAL_NAME_WEAK, OFFICIAL_REASONS, OFFICIAL_PHRASES,
-    STRONG_NEGATIVE, MEDIUM_NEGATIVE, MILD_NEGATIVE, POSITIVE_CONTEXT, REGIONS,
+    STRONG_NEGATIVE, MEDIUM_NEGATIVE, MILD_NEGATIVE, POSITIVE_CONTEXT,
 )
 
 log = logging.getLogger(__name__)
@@ -56,8 +56,8 @@ def is_official(w: Weibo) -> tuple[bool, str]:
 
 # ══════════════ 词库打分 ══════════════
 
-def analyze(w: Weibo) -> None:
-    """就地填充 Weibo 的研判字段"""
+def analyze(w: Weibo, city: City) -> None:
+    """就地填充 Weibo 的研判字段（city 用于区县归属）"""
     text = w.text
     w.strong_neg = [p for p in STRONG_NEGATIVE if p in text]
     w.medium_neg = [p for p in MEDIUM_NEGATIVE if p in text]
@@ -85,9 +85,9 @@ def analyze(w: Weibo) -> None:
     else:
         w.sentiment_label, w.sentiment_score = "中性", 0.5
 
-    # 区县归属
-    w.regions = [name for name, kws in REGIONS.items()
-                 if any(kw in text for kw in kws) and name != CITY_NAME] or [CITY_NAME]
+    # 区县归属（与 main 的相关性过滤共用同一套消歧逻辑）
+    w.regions = [r for r in city.match_regions(text)
+                 if r != city.name] or [city.name]
 
 
 # ══════════════ 可选：本地模型复核（免费） ══════════════
@@ -138,15 +138,17 @@ def model_refine(results: list[Weibo]) -> int:
 
 # ══════════════ 可选：LLM 复核 ══════════════
 
-_LLM_SYSTEM = (
-    f"你是地市级舆情研判助手。对每条微博判断其是否为公众对{CITY_NAME}（含区县）"
-    "政务、民生、市场秩序等方面的负面反馈。官方通报、正面宣传、"
-    "整治行动新闻、与本地无关的内容都不算负面。"
-    '只输出JSON数组，每项形如 {"id":"...","label":"负面|偏负面|关注|中性|正面","reason":"15字内"}。'
-)
+def _llm_system(city_name: str) -> str:
+    return (
+        f"你是地市级舆情研判助手。对每条微博判断其是否为公众对{city_name}（含区县）"
+        "政务、民生、市场秩序等方面的负面反馈。官方通报、正面宣传、"
+        "整治行动新闻、与本地无关的内容都不算负面。"
+        '只输出JSON数组，每项形如 {"id":"...","label":"负面|偏负面|关注|中性|正面","reason":"15字内"}。'
+    )
 
 
-def llm_refine(candidates: list[Weibo], settings: Settings, batch: int = 20) -> None:
+def llm_refine(candidates: list[Weibo], settings: Settings,
+               city_name: str = "本市", batch: int = 20) -> None:
     """对负面候选调用 OpenAI 兼容接口复核，失败时静默保留词库结论"""
     if not settings.llm_ready or not candidates:
         return
@@ -165,7 +167,7 @@ def llm_refine(candidates: list[Weibo], settings: Settings, batch: int = 20) -> 
             resp = requests.post(url, headers=headers, timeout=60, json={
                 "model": settings.llm_model,
                 "temperature": 0,
-                "messages": [{"role": "system", "content": _LLM_SYSTEM},
+                "messages": [{"role": "system", "content": _llm_system(city_name)},
                              {"role": "user", "content": user_msg}],
             })
             resp.raise_for_status()

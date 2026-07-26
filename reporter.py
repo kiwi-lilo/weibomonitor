@@ -12,7 +12,8 @@ from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from config import TZ
-from keywords import LABEL_ICONS, CITY_NAME, CITY_SHORT
+from keywords import LABEL_ICONS
+from cities import City
 from models import Weibo
 
 log = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def print_report(results: list[Weibo], new_negatives: list[Weibo],
 
 # ══════════════ 文件保存 ══════════════
 
-def save_files(results: list[Weibo], negatives: list[Weibo],
+def save_files(city_short: str, results: list[Weibo], negatives: list[Weibo],
                filtered: list[dict], period: str, out_dir: str = ".") -> list[str]:
     ts = datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
     files: list[str] = []
@@ -103,13 +104,13 @@ def save_files(results: list[Weibo], negatives: list[Weibo],
         log.info("已保存 %s (%d 行)", path, len(rows))
 
     if results:
-        _csv(f"{CITY_SHORT}舆情_全部_{ts}.csv",
+        _csv(f"{city_short}舆情_全部_{ts}.csv",
              sorted(results, key=lambda x: x.heat, reverse=True))
     if negatives:
-        _csv(f"{CITY_SHORT}舆情_负面_{ts}.csv",
+        _csv(f"{city_short}舆情_负面_{ts}.csv",
              sorted(negatives, key=lambda x: x.sentiment_score))
 
-    jpath = os.path.join(out_dir, f"{CITY_SHORT}舆情_{ts}.json")
+    jpath = os.path.join(out_dir, f"{city_short}舆情_{ts}.json")
     with open(jpath, "w", encoding="utf-8") as f:
         json.dump({
             "period": period,
@@ -130,14 +131,13 @@ _env = Environment(
 )
 
 
-def build_html_report(results: list[Weibo], new_negatives: list[Weibo],
-                      old_negative_count: int, filtered_count: int,
-                      period: str, health_summary: str, health_ok: bool) -> str:
-    tpl = _env.get_template("report.html.j2")
-    return tpl.render(
-        city_name=CITY_NAME,
-        period=period,
-        generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
+def build_city_section(city: City, results: list[Weibo], new_negatives: list[Weibo],
+                       old_negative_count: int, filtered_count: int,
+                       health_summary: str, health_ok: bool) -> dict:
+    """渲染单个城市的报告片段，并返回汇总所需的数据"""
+    tpl = _env.get_template("city_section.html.j2")
+    html = tpl.render(
+        city_name=city.name,
         results=results,
         new_negatives=sorted(new_negatives, key=lambda x: (x.sentiment_score, -x.heat)),
         old_negative_count=old_negative_count,
@@ -146,6 +146,25 @@ def build_html_report(results: list[Weibo], new_negatives: list[Weibo],
         label_colors=LABEL_COLORS,
         health_summary=health_summary or "全部正常",
         health_ok=health_ok,
+    )
+    return {
+        "city": city.short,
+        "html": html,
+        "new_neg": len(new_negatives),
+        "total": len(results),
+        "health_ok": health_ok,
+    }
+
+
+def build_digest_html(sections: list[dict], period: str) -> str:
+    """把各城市片段拼成一封汇总日报"""
+    tpl = _env.get_template("digest.html.j2")
+    return tpl.render(
+        period=period,
+        generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
+        sections=sections,
+        total_new_neg=sum(s["new_neg"] for s in sections),
+        any_unhealthy=any(not s["health_ok"] for s in sections),
     )
 
 
