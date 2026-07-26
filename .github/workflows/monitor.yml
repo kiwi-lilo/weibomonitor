@@ -1,4 +1,4 @@
-name: 汉中舆情监测
+name: 舆情监测
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
 
     steps:
       - name: 拉取代码
@@ -40,7 +40,7 @@ jobs:
       - name: 恢复历史状态
         uses: actions/cache/restore@v4
         with:
-          path: state/seen.json
+          path: state
           key: seen-${{ github.run_id }}
           restore-keys: |
             seen-
@@ -66,7 +66,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: state/seen.json
+          path: state
           key: seen-${{ github.run_id }}
 
       - name: 上传结果
