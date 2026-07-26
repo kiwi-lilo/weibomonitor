@@ -45,6 +45,7 @@
         📍{{ w.regions|join('、') }} ｜ 🔥热度 {{ w.heat }}（转{{ w.reposts }}/评{{ w.comments }}/赞{{ w.likes }}）
         {% if w.strong_neg %}｜ 强负面：{{ w.strong_neg|join('、') }}{% endif %}
         {% if w.medium_neg %}｜ 中负面：{{ w.medium_neg|join('、') }}{% endif %}
+        {% if w.model_score is not none %}｜ 🧠模型负面度 {{ '%.0f'|format(w.model_score*100) }}%{% endif %}
         {% if w.llm_reason %}｜ 🤖{{ w.llm_reason }}{% endif %}
       </div>
       <div style="margin-top:6px;"><a href="{{ w.url }}" style="color:#3498db;font-size:12px;">查看原微博 →</a></div>
