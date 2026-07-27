@@ -184,3 +184,49 @@ def llm_refine(candidates: list[Weibo], settings: Settings,
                     w.llm_reason = item.get("reason", "")
         except (requests.RequestException, ValueError, KeyError) as e:
             log.warning("LLM 复核批次失败，保留词库结论: %s", e)
+# --- analyzer.py 文件的末尾 ---
+import requests
+import logging
+
+log = logging.getLogger(__name__)
+
+def llm_summarize(top_candidates: list, settings) -> None:
+    """对 Top 10 负面舆情调用 LLM 生成单句总结（专供领导阅示）"""
+    # 检查是否在 GitHub Secrets 中配置了 API KEY
+    if not settings.llm_api_key or not top_candidates:
+        return
+    
+    # 默认使用 Google 的 OpenAI 兼容接口，如果 GitHub Secrets 没填 BASE 就用默认的
+    base_url = (settings.llm_api_base or "https://generativelanguage.googleapis.com/v1beta/openai/").rstrip("/")
+    url = f"{base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.llm_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    log.info("开始生成 Top %d 领导专报摘要...", len(top_candidates))
+    for w in top_candidates:
+        prompt = (
+            "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
+            "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，用于精准概括该舆情事件的核心。"
+            "字数与排版格式：生成的文本总字数需严格控制在100字左右。必须采用纯粹的一段话形式输出，首尾贯通，绝对不可分段。"
+            "核心内容与数据：必须客观说清楚事情的来龙去脉（包含事发地点、前因后果等核心要素），直击矛盾痛点。特别提醒：若提供的原文素材中包含任何具体数据，必须在输出文本中予以完整保留。"
+            "内容绝对禁区：不需要阐述事件的影响及群众诉求；绝对不允许在文本中提出任何解决建议或应对措施。"
+            "责任性质界定：确保舆情事件发生的责任主体严格限定在政府行政及公共服务工作范畴内，坚决禁止从党口相关工作、司法程序、官员贪腐、普通民事纠纷或诉讼案件等角度进行撰写。"
+            "公文文风语态：保持严肃、紧凑的公文语态，行文要高度凝练，坚决禁止使用如“一是、二是，首先、其次”等罗列型连接词。"
+            f"原贴内容：{w.text[:400]}"
+        )
+        try:
+            resp = requests.post(url, headers=headers, timeout=15, json={
+                "model": settings.llm_model or "gemini-1.5-flash",
+                "temperature": 0.2, # 低温保证客观严肃
+                "messages": [{"role": "user", "content": prompt}],
+            })
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"].strip()
+            # 强行清洗大模型可能附带的标点或换行
+            w.summary = content.replace('\n', '').strip('。，！；.,!; ')
+        except Exception as e:
+            log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
+            # 失败兜底：截取原文
+            w.summary = w.text[:20].strip() + "..."

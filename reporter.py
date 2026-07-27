@@ -156,17 +156,36 @@ def build_city_section(city: City, results: list[Weibo], new_negatives: list[Wei
     }
 
 
-def build_digest_html(sections: list[dict], period: str) -> str:
-    """把各城市片段拼成一封汇总日报"""
+# --- reporter.py ---
+
+def build_leader_summary_text(top_weibos: list) -> str:
+    """生成领导要求的严格文本格式"""
+    lines = []
+    for w in top_weibos:
+        # 严格遵守格式：“△总结的内容（新浪微博:发帖人id）原文链接”
+        sum_text = w.summary if w.summary else (w.text[:20] + "...")
+        lines.append(f"△{sum_text}（新浪微博:{w.user}）{w.url}")
+    return "\n".join(lines)
+
+
+def build_digest_html(sections: list[dict], period: str, leader_text: str = "") -> str:
+    """把各城市片段拼成一封汇总日报，传递 leader_text 给模板渲染"""
+    from datetime import datetime
+    try:
+        from .config import TZ # 确保导入你的时区设置
+    except ImportError:
+        import pytz
+        TZ = pytz.timezone('Asia/Shanghai')
+
     tpl = _env.get_template("digest.html.j2")
     return tpl.render(
         period=period,
         generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
         sections=sections,
         total_new_neg=sum(s["new_neg"] for s in sections),
-        any_unhealthy=any(not s["health_ok"] for s in sections),
+        any_unhealthy=any(not s.get("health_ok", True) for s in sections),
+        leader_text=leader_text  # ✅ 将领导专报纯文本传给模板，由模板渲染黄框
     )
-
 
 def build_alert_html(reason: str, health_summary: str) -> str:
     """采集异常告警邮件（简单内联，无需模板）"""

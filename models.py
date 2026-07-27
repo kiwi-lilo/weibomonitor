@@ -50,3 +50,12 @@ class Weibo:
         d["heat"] = self.heat
         d["user_type"] = self.user_type
         return d
+# --- models.py 中 Weibo 类的末尾 ---
+    positive_ctx: list[str] = field(default_factory=list)
+    llm_reason: str = ""            # LLM 复核理由
+    model_score: float | None = None  # 本地模型负面概率
+    regions: list[str] = field(default_factory=list)
+    is_new: bool = True             # 相对历史 seen 是否新增
+    
+    # ✅ 新增这行：专供领导专报的单句总结
+    summary: str = ""
