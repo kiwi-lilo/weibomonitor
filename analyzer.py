@@ -150,6 +150,8 @@ def _llm_system(city_name: str) -> str:
 def llm_refine(candidates: list[Weibo], settings: Settings,
                city_name: str = "本市", batch: int = 20) -> None:
     """对负面候选调用 OpenAI 兼容接口复核，失败时静默保留词库结论"""
+    # ✅ 在这里加上这一行：直接退出，彻底关闭大模型的情感复核！
+    return
     if not settings.llm_ready or not candidates:
         return
     url = settings.llm_api_base.rstrip("/") + "/chat/completions"
