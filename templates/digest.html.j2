@@ -3,6 +3,7 @@
 <body style="margin:0;padding:0;background:#f4f5f7;font-family:'PingFang SC','Microsoft YaHei',sans-serif;">
 <div style="max-width:760px;margin:0 auto;padding:16px;">
 
+  <!-- 顶部状态栏 -->
   <div style="background:{{ '#e74c3c' if total_new_neg else '#2ecc71' }};color:#fff;border-radius:8px;padding:18px 20px;margin-bottom:16px;">
     <div style="font-size:20px;font-weight:bold;">陕西多市微博舆情日报</div>
     <div style="font-size:13px;opacity:.9;margin-top:4px;">
@@ -11,6 +12,20 @@
     <div style="font-size:12px;opacity:.8;margin-top:4px;">监测区间 {{ period }} ｜ 生成于 {{ generated_at }}</div>
   </div>
 
+  <!-- ✅ 领导舆情专报 (只有在有内容时才显示) -->
+  {% if leader_text %}
+  <div style="background:#fff3cd;border:1px solid #ffeeba;border-radius:8px;padding:16px 20px;margin-bottom:16px;color:#856404;">
+    <div style="font-size:16px;font-weight:bold;margin-bottom:10px;border-bottom:1px solid #ffeeba;padding-bottom:8px;">
+      👑 领导舆情专报 (全省 Top 10)
+    </div>
+    <div style="font-size:15px;line-height:1.8;font-family:sans-serif;">
+      <!-- replace 自动将纯文本的换行变成网页里的换行 -->
+      {{ leader_text | replace('\n', '<br>') | safe }}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 各市汇总表格 -->
   <table width="100%" cellpadding="8" cellspacing="0" style="background:#fff;border-radius:8px;font-size:13px;border-collapse:separate;margin-bottom:16px;">
     <tr style="color:#888;"><th align="left" style="padding-left:16px;">城市</th><th>新增负面</th><th>微博总量</th><th>状态</th></tr>
     {% for s in sections %}
@@ -23,6 +38,7 @@
     {% endfor %}
   </table>
 
+  <!-- 各市详情片段 -->
   {% for s in sections %}{{ s.html|safe }}{% endfor %}
 
   <div style="padding-top:10px;color:#aaa;font-size:12px;text-align:center;">
