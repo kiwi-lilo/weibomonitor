@@ -156,35 +156,37 @@ def build_city_section(city: City, results: list[Weibo], new_negatives: list[Wei
     }
 
 
-# --- reporter.py ---
+# --- reporter.py 底部替换部分 ---
 
 def build_leader_summary_text(top_weibos: list) -> str:
     """生成领导要求的严格文本格式"""
     lines = []
     for w in top_weibos:
-        # 严格遵守格式：“△总结的内容（新浪微博:发帖人id）原文链接”
-        sum_text = w.summary if w.summary else (w.text[:20] + "...")
+        # 如果大模型自己生成了△，这里用 lstrip('△') 给它去掉，防止变成双三角
+        sum_text = w.summary.lstrip('△') if w.summary else (w.text[:20] + "...")
         lines.append(f"△{sum_text}（新浪微博:{w.user}）{w.url}")
     return "\n".join(lines)
 
 
 def build_digest_html(sections: list[dict], period: str, leader_text: str = "") -> str:
     """把各城市片段拼成一封汇总日报，传递 leader_text 给模板渲染"""
-    from datetime import datetime
+    from datetime import datetime, timezone, timedelta
+    
     try:
-        from .config import TZ # 确保导入你的时区设置
+        # 尝试导入你的时区设置
+        from config import TZ
     except ImportError:
-        import pytz
-        TZ = pytz.timezone('Asia/Shanghai')
+        # ✅ 使用原生自带的 timezone，彻底抛弃 pytz，永远不再报错
+        TZ = timezone(timedelta(hours=8))
 
     tpl = _env.get_template("digest.html.j2")
     return tpl.render(
         period=period,
         generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
         sections=sections,
-        total_new_neg=sum(s["new_neg"] for s in sections),
+        total_new_neg=sum(s.get("new_neg", 0) for s in sections),
         any_unhealthy=any(not s.get("health_ok", True) for s in sections),
-        leader_text=leader_text  # ✅ 将领导专报纯文本传给模板，由模板渲染黄框
+        leader_text=leader_text  # 把专报传给前端模板
     )
 
 def build_alert_html(reason: str, health_summary: str) -> str:
