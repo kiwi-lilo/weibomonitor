@@ -181,31 +181,26 @@ def run(settings: Settings) -> None:
     # 汇总一封日报
 # ================ main.py 主循环结束，下面是组装发送阶段 ================
 
-    # 0. 提取所有城市的附件合并成一个大列表
+    # 0. 提取所有城市的附件
     all_files = [f for s in sections for f in s.get("files", [])]
 
     # ---------------- 1. 提取 Top 10 领导专报 ----------------
     from analyzer import llm_summarize
     from reporter import build_leader_summary_text, build_digest_html
-    from datetime import datetime
     
-    # 汇总所有城市的新增负面，并通过 id 去重（防止跨城同名导致的重复）
     unique_neg = {}
     for s in sections:
         for w in s.get("new_negatives_list", []):
             unique_neg[w.id] = w
     all_new_neg = list(unique_neg.values())
     
-    # 核心排榜逻辑：按照 情感分越低越危险(正序) + 热度越高越受关注(倒序) 排序
     all_new_neg.sort(key=lambda x: (getattr(x, 'sentiment_score', 0), -getattr(x, 'heat', 0)))
-    top10 = all_new_neg[:10]  # 只取全省前 10 条
+    top10 = all_new_neg[:10]
     
-    # 调动大模型生成摘要
     leader_text = ""
     if top10:
         llm_summarize(top10, settings)
         leader_text = build_leader_summary_text(top10)
-        # 打印到 GitHub Actions 控制台，方便日志追溯
         print("\n" + "👑" * 30)
         print("  领导舆情专报 (Top 10 极简版)")
         print("👑" * 30 + "\n")
@@ -213,16 +208,10 @@ def run(settings: Settings) -> None:
         print("\n" + "═" * 60)
         
     # ---------------- 2. 生成 HTML 邮件正文 ----------------
-    # 传入 leader_text 供模板渲染顶部的黄框
     html = build_digest_html(sections, period, leader_text=leader_text)
     
     # ---------------- 3. 生成动态邮件标题 ----------------
-    try:
-        from config import TZ
-    except ImportError:
-        import pytz
-        TZ = pytz.timezone('Asia/Shanghai')
-        
+    # 直接使用 main.py 顶部已经导入好的 datetime 和 TZ
     today = datetime.now(TZ).strftime("%m-%d")
     total_new = sum(s.get("new_neg", 0) for s in sections)
     any_bad = any(not s.get("health_ok", True) for s in sections)
@@ -235,7 +224,6 @@ def run(settings: Settings) -> None:
         subject = f"✅ 陕西舆情日报 {today} | 各市均无新增负面"
 
     # ---------------- 4. 执行发送邮件 ----------------
-    # 带有动态标题、带大模型专报的HTML正文、带上所有城市的附件
     send_email(settings, subject, html, attachments=all_files)
     log.info("✅ 全部 %d 市执行完成", len(CITIES))
 
