@@ -26,6 +26,7 @@ from models import Weibo
 from fetcher import build_session, search_mobile, search_general, Health, Status
 from analyzer import is_official, analyze, llm_refine, model_refine
 from state import load_seen, save_seen
+from event_dedup import deduplicate_event_candidates
 from reporter import (
     build_alert_html,
     build_city_section,
@@ -206,7 +207,11 @@ def run(settings: Settings) -> None:
             -getattr(item[1], "heat", 0),
         )
     )
-    top10_items = all_new_neg[:10]
+    unique_events = deduplicate_event_candidates(all_new_neg)
+    if len(unique_events) != len(all_new_neg):
+        log.info("推荐候选事件去重：%d 条微博 → %d 个独立事件",
+                 len(all_new_neg), len(unique_events))
+    top10_items = unique_events[:10]
     top10 = [weibo for _, weibo in top10_items]
     
     leader_text = ""
