@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class City:
     name: str                          # 全称，如 "汉中市"
-    short: str                         # 简称，如 "汉中"（用于文件名/邮件）
+    short: str                         # 简称，如 "汉中"（用于文件名/通知）
     regions: dict[str, tuple[str, ...]]  # {区县全称: (关键词, ...)}
     confirm: tuple[str, ...] = ()      # 锚定词：正文出现任一即确认属本市，跳过排除判定
     deny: dict[str, tuple[str, ...]] = field(default_factory=dict)

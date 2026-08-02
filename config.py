@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 def _load_dotenv() -> None:
@@ -31,7 +32,7 @@ DAYS_BACK = 2             # 监测最近 N 天
 
 
 def _split_receivers(raw: str) -> list[str]:
-    return [r.strip() for r in raw.split(",") if r.strip()]
+    return [receiver.strip() for receiver in raw.split(",") if receiver.strip()]
 
 
 @dataclass
@@ -39,12 +40,24 @@ class Settings:
     cookie: str = field(default_factory=lambda: os.environ.get("WEIBO_COOKIE", ""))
 
     smtp_server: str = field(default_factory=lambda: os.environ.get("SMTP_SERVER", "smtp.qq.com"))
-    smtp_port: int = field(default_factory=lambda: int(os.environ.get("SMTP_PORT", "465")))
+    smtp_port: int = field(
+        default_factory=lambda: int(os.environ.get("SMTP_PORT", "").strip() or "465")
+    )
     email_sender: str = field(default_factory=lambda: os.environ.get("EMAIL_SENDER", ""))
     email_password: str = field(default_factory=lambda: os.environ.get("EMAIL_PASSWORD", ""))
     email_receivers: list[str] = field(
         default_factory=lambda: _split_receivers(os.environ.get("EMAIL_RECEIVERS", ""))
     )
+
+    # Bark App 中显示的推送地址，例如 https://api.day.app/your-device-key
+    # 自建服务同样填写包含设备 Key 的完整地址。
+    bark_url: str = field(
+        default_factory=lambda: os.environ.get("BARK_URL", "").strip().rstrip("/")
+    )
+    bark_group: str = field(
+        default_factory=lambda: os.environ.get("BARK_GROUP", "").strip() or "陕西舆情监测"
+    )
+    bark_icon: str = field(default_factory=lambda: os.environ.get("BARK_ICON", "").strip())
 
     # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配则退回纯词库研判
     llm_api_base: str = field(default_factory=lambda: os.environ.get("LLM_API_BASE", ""))
@@ -52,8 +65,27 @@ class Settings:
     llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
 
     @property
+    def bark_ready(self) -> bool:
+        parsed = urlparse(self.bark_url)
+        return (
+            parsed.scheme in ("https", "http")
+            and bool(parsed.netloc)
+            and bool(parsed.path.strip("/"))
+        )
+
+    @property
     def email_ready(self) -> bool:
         return bool(self.email_sender and self.email_password and self.email_receivers)
+
+    @property
+    def run_url(self) -> str:
+        """GitHub Actions 运行详情；本地运行时为空。"""
+        server = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
+        repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+        run_id = os.environ.get("GITHUB_RUN_ID", "")
+        if server and repository and run_id:
+            return f"{server}/{repository}/actions/runs/{run_id}"
+        return ""
 
     @property
     def llm_ready(self) -> bool:
@@ -64,6 +96,8 @@ class Settings:
         problems = []
         if not self.cookie:
             problems.append("未配置 WEIBO_COOKIE")
+        if not self.bark_ready:
+            problems.append("未配置有效的 BARK_URL，将跳过 Bark 推送")
         if not self.email_ready:
-            problems.append("邮件配置不完整（SENDER/PASSWORD/RECEIVERS），将跳过发信")
+            problems.append("邮件配置不完整（SENDER/PASSWORD/RECEIVERS），将跳过邮件")
         return problems

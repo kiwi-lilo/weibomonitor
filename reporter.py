@@ -1,4 +1,4 @@
-"""reporter.py — 终端报告 + 文件保存 + HTML 邮件正文（Jinja2 自动转义）"""
+"""reporter.py — 终端报告、文件保存与汇总数据整理。"""
 
 from __future__ import annotations
 
@@ -18,8 +18,13 @@ from models import Weibo
 
 log = logging.getLogger(__name__)
 
-LABEL_COLORS = {"负面": "#e74c3c", "偏负面": "#e67e22", "关注": "#f1c40f",
-                "中性": "#95a5a6", "正面": "#2ecc71"}
+LABEL_COLORS = {
+    "负面": "#c9362b",
+    "偏负面": "#d97706",
+    "关注": "#ca8a04",
+    "中性": "#64748b",
+    "正面": "#16845b",
+}
 
 CSV_FIELDS = ["time", "user", "user_type", "verified", "followers", "text",
               "sentiment_label", "sentiment_score", "model_score", "llm_reason", "regions",
@@ -123,7 +128,35 @@ def save_files(city_short: str, results: list[Weibo], negatives: list[Weibo],
     return files
 
 
-# ══════════════ HTML 报告 ══════════════
+def build_city_section(city: City, results: list[Weibo], new_negatives: list[Weibo],
+                       old_negative_count: int, filtered_count: int,
+                       health_summary: str, health_ok: bool) -> dict:
+    """返回 Bark 汇总和存档所需的单城市统计。"""
+    return {
+        "city": city.short,
+        "new_neg": len(new_negatives),
+        "total": len(results),
+        "old_neg": old_negative_count,
+        "filtered": filtered_count,
+        "health_summary": health_summary or "全部正常",
+        "health_ok": health_ok,
+        "region_stats": _region_stats(results),
+        "new_negatives": sorted(
+            new_negatives,
+            key=lambda weibo: (weibo.sentiment_score, -weibo.heat),
+        ),
+    }
+
+
+def build_leader_summary_text(top_weibos: list) -> str:
+    """生成领导要求的严格文本格式"""
+    lines = []
+    for w in top_weibos:
+        # 如果大模型自己生成了△，这里用 lstrip('△') 给它去掉，防止变成双三角
+        sum_text = w.summary.lstrip("△").strip() if w.summary else (w.text[:20] + "…")
+        lines.append(f"△{sum_text}（新浪微博：{w.user}）{w.url}")
+    return "\n".join(lines)
+
 
 _env = Environment(
     loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), "templates")),
@@ -131,75 +164,38 @@ _env = Environment(
 )
 
 
-def build_city_section(city: City, results: list[Weibo], new_negatives: list[Weibo],
-                       old_negative_count: int, filtered_count: int,
-                       health_summary: str, health_ok: bool) -> dict:
-    """渲染单个城市的报告片段，并返回汇总所需的数据"""
-    tpl = _env.get_template("city_section.html.j2")
-    html = tpl.render(
-        city_name=city.name,
-        results=results,
-        new_negatives=sorted(new_negatives, key=lambda x: (x.sentiment_score, -x.heat)),
-        old_negative_count=old_negative_count,
-        filtered_count=filtered_count,
-        region_stats=_region_stats(results),
-        label_colors=LABEL_COLORS,
-        health_summary=health_summary or "全部正常",
-        health_ok=health_ok,
-    )
-    return {
-        "city": city.short,
-        "html": html,
-        "new_neg": len(new_negatives),
-        "total": len(results),
-        "health_ok": health_ok,
-    }
-
-
-# --- reporter.py 底部替换部分 ---
-
-def build_leader_summary_text(top_weibos: list) -> str:
-    """生成领导要求的严格文本格式"""
-    lines = []
-    for w in top_weibos:
-        # 如果大模型自己生成了△，这里用 lstrip('△') 给它去掉，防止变成双三角
-        sum_text = w.summary.lstrip('△') if w.summary else (w.text[:20] + "...")
-        lines.append(f"△{sum_text}（新浪微博:{w.user}）{w.url}")
-    return "\n".join(lines)
-
-
 def build_digest_html(sections: list[dict], period: str, leader_text: str = "") -> str:
-    """把各城市片段拼成一封汇总日报，传递 leader_text 给模板渲染"""
-    from datetime import datetime, timezone, timedelta
-    
-    try:
-        # 尝试导入你的时区设置
-        from config import TZ
-    except ImportError:
-        # ✅ 使用原生自带的 timezone，彻底抛弃 pytz，永远不再报错
-        TZ = timezone(timedelta(hours=8))
-
-    tpl = _env.get_template("digest.html.j2")
-    return tpl.render(
+    """生成包含推荐候选、城市统计和明细的 HTML 邮件日报。"""
+    template = _env.get_template("digest.html.j2")
+    return template.render(
         period=period,
         generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
         sections=sections,
-        total_new_neg=sum(s.get("new_neg", 0) for s in sections),
-        any_unhealthy=any(not s.get("health_ok", True) for s in sections),
-        leader_text=leader_text  # 把专报传给前端模板
+        total_new_neg=sum(section.get("new_neg", 0) for section in sections),
+        total_posts=sum(section.get("total", 0) for section in sections),
+        healthy_count=sum(bool(section.get("health_ok", True)) for section in sections),
+        any_unhealthy=any(not section.get("health_ok", True) for section in sections),
+        leader_text=leader_text,
+        recommendation_count=len(leader_text.splitlines()) if leader_text else 0,
+        label_colors=LABEL_COLORS,
     )
 
+
 def build_alert_html(reason: str, health_summary: str) -> str:
-    """采集异常告警邮件（简单内联，无需模板）"""
+    """生成采集异常告警邮件。"""
     import html
+
     return (
-        '<div style="font-family:sans-serif;max-width:640px;margin:0 auto;">'
-        '<div style="background:#c0392b;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">'
-        "<b>⚠️ 舆情监测采集异常</b></div>"
-        '<div style="background:#fff;border:1px solid #eee;padding:16px 20px;">'
-        f"<p>{html.escape(reason)}</p>"
-        f"<p style='color:#888;font-size:13px;'>接口状态：{html.escape(health_summary)}</p>"
-        "<p style='color:#888;font-size:13px;'>常见原因：WEIBO_COOKIE 过期（请重新抓取并更新 "
-        "GitHub Secrets）、触发风控限流、微博接口改版。</p>"
-        "</div></div>"
+        '<div style="background:#f4f5f7;padding:28px;font-family:-apple-system,'
+        'BlinkMacSystemFont,Segoe UI,Microsoft YaHei,sans-serif;color:#20242c;">'
+        '<div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid '
+        '#e4e7ec;border-radius:8px;overflow:hidden;">'
+        '<div style="background:#292d35;color:#fff;padding:20px 24px;font-size:18px;">'
+        '<b style="color:#ff786f;">采集异常</b> · 陕西舆情监测</div>'
+        '<div style="padding:24px;line-height:1.75;">'
+        f'<div style="font-size:16px;font-weight:600;">{html.escape(reason)}</div>'
+        f'<p style="color:#667085;">接口状态：{html.escape(health_summary)}</p>'
+        '<div style="border-left:3px solid #d63c32;padding:10px 14px;background:#fff5f4;'
+        'color:#6b3030;">请优先检查 WEIBO_COOKIE 是否过期；也可能是接口限流或微博接口变更。</div>'
+        "</div></div></div>"
     )

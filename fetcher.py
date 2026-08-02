@@ -3,7 +3,7 @@
 核心改进（相对 v4）：
 1. 每次请求显式区分 5 种结果状态，Cookie 失效 / 被限流不再伪装成"0 条"。
 2. requests.Session 挂自动重试（连接错误 / 5xx 指数退避）。
-3. Health 计数器供 main 决策：掉登录立即中止并发告警邮件。
+3. Health 计数器供 main 决策：掉登录立即中止并发送邮件、Bark 告警。
 """
 
 from __future__ import annotations

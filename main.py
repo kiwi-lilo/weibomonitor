@@ -1,11 +1,11 @@
 """main.py — 陕西多市微博舆情监测 v5
 
 一次运行遍历 cities.py 中的所有城市：共用一个 Cookie、一次装依赖、
-情感模型只加载一次，最后发一封汇总日报（各市一节 + 附件）。
+情感模型只加载一次，最后发送 HTML 邮件日报和 Bark 推荐候选。
 
 关键行为：
   · 按微博 id 去重，seen 状态每城市各一份、跨天持久化，日报只突出"新增"
-  · Cookie 失效 / 首城市三接口全挂 → 中止整轮并发异常告警邮件
+  · Cookie 失效 / 首城市三接口全挂 → 中止整轮并发邮件、Bark 异常告警
   · 每组合翻 1 页、首页为空即早停
   · 情感研判：词库 → 本地模型(transformer/lite) → 可选 LLM
 """
@@ -26,8 +26,14 @@ from models import Weibo
 from fetcher import build_session, search_mobile, search_general, Health, Status
 from analyzer import is_official, analyze, llm_refine, model_refine
 from state import load_seen, save_seen
-from reporter import (print_report, save_files, build_city_section,
-                      build_digest_html, build_alert_html)
+from reporter import (
+    build_alert_html,
+    build_city_section,
+    build_digest_html,
+    print_report,
+    save_files,
+)
+from bark import build_alert_message, build_digest_messages, send_bark
 from mailer import send_email
 
 logging.basicConfig(level=logging.INFO,
@@ -174,28 +180,34 @@ def run(settings: Settings) -> None:
             sections.append(mon.finalize())
     except AuthAborted as e:
         log.error("⛔ %s，中止整轮", e)
-        send_email(settings, f"⚠️ 陕西舆情监测采集异常 {today}",
-                   build_alert_html(str(e), "见运行日志"))
+        send_email(
+            settings,
+            f"⚠️ 陕西舆情监测采集异常 {today}",
+            build_alert_html(str(e), "见运行日志"),
+        )
+        send_bark(settings, build_alert_message(str(e), settings.run_url))
         sys.exit(1)
 
-    # 汇总一封日报
-# ================ main.py 主循环结束，下面是组装发送阶段 ================
+    all_files = [filepath for section in sections for filepath in section.get("files", [])]
 
-    # 0. 提取所有城市的附件
-    all_files = [f for s in sections for f in s.get("files", [])]
-
-    # ---------------- 1. 提取 Top 10 领导专报 ----------------
+    # 提取 Top 10 领导专报，同时保留所属城市供 Bark 排版。
     from analyzer import llm_summarize
-    from reporter import build_leader_summary_text, build_digest_html
+    from reporter import build_leader_summary_text
     
-    unique_neg = {}
+    unique_neg: dict[str, tuple[str, Weibo]] = {}
     for s in sections:
         for w in s.get("new_negatives_list", []):
-            unique_neg[w.id] = w
+            unique_neg[w.id] = (s.get("city", "陕西"), w)
     all_new_neg = list(unique_neg.values())
     
-    all_new_neg.sort(key=lambda x: (getattr(x, 'sentiment_score', 0), -getattr(x, 'heat', 0)))
-    top10 = all_new_neg[:10]
+    all_new_neg.sort(
+        key=lambda item: (
+            getattr(item[1], "sentiment_score", 0),
+            -getattr(item[1], "heat", 0),
+        )
+    )
+    top10_items = all_new_neg[:10]
+    top10 = [weibo for _, weibo in top10_items]
     
     leader_text = ""
     if top10:
@@ -207,24 +219,20 @@ def run(settings: Settings) -> None:
         print(leader_text)
         print("\n" + "═" * 60)
         
-    # ---------------- 2. 生成 HTML 邮件正文 ----------------
-    html = build_digest_html(sections, period, leader_text=leader_text)
-    
-    # ---------------- 3. 生成动态邮件标题 ----------------
-    # 直接使用 main.py 顶部已经导入好的 datetime 和 TZ
-    today = datetime.now(TZ).strftime("%m-%d")
-    total_new = sum(s.get("new_neg", 0) for s in sections)
-    any_bad = any(not s.get("health_ok", True) for s in sections)
-
-    if total_new > 0:
-        subject = f"🔴 陕西舆情日报 {today} | 新增负面合计 {total_new} 条"
-    elif any_bad:
-        subject = f"⚠️ 陕西舆情日报 {today} | 部分城市采集异常"
+    month_day = now.strftime("%m-%d")
+    total_new = sum(section.get("new_neg", 0) for section in sections)
+    any_unhealthy = any(not section.get("health_ok", True) for section in sections)
+    if total_new:
+        subject = f"🔴 陕西舆情日报 {month_day} | 新增负面合计 {total_new} 条"
+    elif any_unhealthy:
+        subject = f"⚠️ 陕西舆情日报 {month_day} | 部分城市采集异常"
     else:
-        subject = f"✅ 陕西舆情日报 {today} | 各市均无新增负面"
+        subject = f"✅ 陕西舆情日报 {month_day} | 各市均无新增负面"
 
-    # ---------------- 4. 执行发送邮件 ----------------
+    html = build_digest_html(sections, period, leader_text=leader_text)
     send_email(settings, subject, html, attachments=all_files)
+    for message in build_digest_messages(sections, period, top10_items, settings.run_url):
+        send_bark(settings, message)
     log.info("✅ 全部 %d 市执行完成", len(CITIES))
 
 

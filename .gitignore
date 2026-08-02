@@ -3,6 +3,6 @@ state/
 __pycache__/
 *.pyc
 .venv/
-汉中舆情_*.csv
-汉中舆情_*.json
+*舆情_*.csv
+*舆情_*.json
 verify_report_preview.html
