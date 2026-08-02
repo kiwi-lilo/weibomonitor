@@ -2,7 +2,7 @@ name: 舆情监测
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # 北京时间 23:00
+    - cron: '0 20 * * 1-5'   # 周一至周五，北京时间 23:00
   workflow_dispatch:
 
 jobs:
@@ -56,6 +56,9 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          BARK_GROUP: ${{ vars.BARK_GROUP }}
+          BARK_ICON: ${{ vars.BARK_ICON }}
           # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
