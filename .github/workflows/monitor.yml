@@ -2,7 +2,7 @@ name: 舆情监测
 
 on:
   schedule:
-    - cron: '0 20 * * 1-5'   # 周一至周五，北京时间 23:00
+    - cron: '0 20 * * 0-4'   # 北京时间周一至周五 04:00
   workflow_dispatch:
 
 jobs:
