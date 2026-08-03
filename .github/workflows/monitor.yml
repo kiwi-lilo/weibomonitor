@@ -57,6 +57,7 @@ jobs:
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
           BARK_URL: ${{ secrets.BARK_URL }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           BARK_GROUP: ${{ vars.BARK_GROUP }}
           BARK_ICON: ${{ vars.BARK_ICON }}
           # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
