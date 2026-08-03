@@ -58,6 +58,9 @@ class Settings:
         default_factory=lambda: os.environ.get("BARK_GROUP", "").strip() or "陕西舆情监测"
     )
     bark_icon: str = field(default_factory=lambda: os.environ.get("BARK_ICON", "").strip())
+    wecom_webhook: str = field(
+        default_factory=lambda: os.environ.get("WECOM_WEBHOOK", "").strip()
+    )
 
     # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配则退回纯词库研判
     llm_api_base: str = field(default_factory=lambda: os.environ.get("LLM_API_BASE", ""))
@@ -76,6 +79,16 @@ class Settings:
     @property
     def email_ready(self) -> bool:
         return bool(self.email_sender and self.email_password and self.email_receivers)
+
+    @property
+    def wecom_ready(self) -> bool:
+        parsed = urlparse(self.wecom_webhook)
+        return (
+            parsed.scheme == "https"
+            and parsed.netloc == "qyapi.weixin.qq.com"
+            and parsed.path.endswith("/cgi-bin/webhook/send")
+            and bool(parsed.query)
+        )
 
     @property
     def run_url(self) -> str:
@@ -100,4 +113,6 @@ class Settings:
             problems.append("未配置有效的 BARK_URL，将跳过 Bark 推送")
         if not self.email_ready:
             problems.append("邮件配置不完整（SENDER/PASSWORD/RECEIVERS），将跳过邮件")
+        if not self.wecom_ready:
+            problems.append("未配置有效的 WECOM_WEBHOOK，将跳过企业微信推送")
         return problems

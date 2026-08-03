@@ -36,6 +36,11 @@ from reporter import (
 )
 from bark import build_alert_message, build_digest_messages, send_bark
 from mailer import send_email
+from wecom import (
+    build_alert_message as build_wecom_alert_message,
+    build_digest_messages as build_wecom_digest_messages,
+    send_wecom,
+)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -187,6 +192,7 @@ def run(settings: Settings) -> None:
             build_alert_html(str(e), "见运行日志"),
         )
         send_bark(settings, build_alert_message(str(e), settings.run_url))
+        send_wecom(settings, build_wecom_alert_message(str(e)))
         sys.exit(1)
 
     all_files = [filepath for section in sections for filepath in section.get("files", [])]
@@ -238,6 +244,8 @@ def run(settings: Settings) -> None:
     send_email(settings, subject, html, attachments=all_files)
     for message in build_digest_messages(sections, period, top10_items, settings.run_url):
         send_bark(settings, message)
+    for message in build_wecom_digest_messages(sections, period, top10_items, settings.run_url):
+        send_wecom(settings, message)
     log.info("✅ 全部 %d 市执行完成", len(CITIES))
 
 
