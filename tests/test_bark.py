@@ -45,12 +45,13 @@ def test_digest_message_is_mobile_friendly():
     assert message.title == "🔴 陕西舆情日报｜新增 1 条"
     assert message.subtitle == "2026-07-31 至 2026-08-02"
     assert "榆林 1 · 西安 0" in message.body
-    assert "01｜榆林 · 负面 · 榆阳区 · 热度 28" in message.body
-    assert "△某小区电梯停运多日" in message.body
-    assert "（新浪微博：热心市民）https://weibo.com/1001" in message.body
+    assert "今日推荐候选 1–1" in message.body
     assert "采集健康 2/2" in message.body
     assert message.level == "timeSensitive"
-    assert message.url.endswith("/actions/runs/123")
+    assert message.url == ""
+    assert "01｜榆林 · 负面 · 榆阳区 · 热度 28" in message.body
+    assert "△某小区电梯停运多日" in message.body
+    assert "新浪微博：热心市民" in message.body
 
 
 def test_clean_digest_is_passive():
@@ -65,7 +66,7 @@ def test_clean_digest_is_passive():
     assert "未发现新增个人负面舆情" in message.body
 
 
-def test_ten_recommendations_are_split_into_two_copyable_messages():
+def test_ten_recommendations_are_grouped_into_two_full_messages():
     highlights = []
     for index in range(10):
         weibo = _weibo(
@@ -84,11 +85,30 @@ def test_ten_recommendations_are_split_into_two_copyable_messages():
 
     assert len(messages) == 2
     assert "今日推荐候选 1–5" in messages[0].body
-    assert sum(line.startswith("△") for line in messages[0].body.splitlines()) == 5
     assert messages[1].title == "📌 今日推荐候选 6–10"
-    assert sum(line.startswith("△") for line in messages[1].body.splitlines()) == 5
+    assert messages[0].url == ""
+    assert messages[1].url == ""
     for index in range(1, 11):
-        assert any(f"https://weibo.com/{index}" in message.body for message in messages)
+        assert any(
+            f"https://weibo.com/{index}" in message.body for message in messages
+        )
+
+
+def test_single_item_keeps_full_summary_and_opens_original_weibo():
+    summary = "某小区连续停水，居民多次联系物业后仍未恢复供水，影响老人和儿童日常生活。" * 4
+    weibo = _weibo(summary=summary)
+
+    messages = build_digest_messages(
+        [{"city": "榆林", "new_neg": 1, "total": 1, "health_ok": True}],
+        "2026-08-02 ~ 2026-08-03",
+        [("榆林", weibo)],
+        "https://github.com/example/repo/actions/runs/123",
+    )
+
+    assert len(messages) == 1
+    assert summary in messages[0].body
+    assert not messages[0].body.endswith("…")
+    assert messages[0].url == ""
 
 
 def test_alert_is_time_sensitive():
