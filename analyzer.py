@@ -230,5 +230,5 @@ def llm_summarize(top_candidates: list, settings) -> None:
             w.summary = content.replace('\n', '').strip('。，！；.,!; ')
         except Exception as e:
             log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
-            # 失败兜底：截取原文
-            w.summary = w.text[:20].strip() + "..."
+            # 失败兜底：保留原文，Bark 会提供对应微博的点击入口。
+            w.summary = w.text.strip()

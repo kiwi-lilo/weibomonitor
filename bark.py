@@ -43,9 +43,7 @@ def _recommendation_lines(
         lines.append(
             f"{index:02d}｜{city} · {weibo.sentiment_label} · {region} · 热度 {weibo.heat}"
         )
-        lines.append(
-            f"△{_compact(summary, 110)}（新浪微博：{_compact(weibo.user, 18)}）{weibo.url}"
-        )
+        lines.append(f"△{summary}（新浪微博：{weibo.user}）{weibo.url}")
         lines.append("")
     if lines:
         lines.pop()
@@ -58,7 +56,7 @@ def build_digest_messages(
     highlights: list[tuple[str, Weibo]],
     run_url: str = "",
 ) -> list[BarkMessage]:
-    """生成日报总览及最多 10 条可直接复制的推荐候选。"""
+    """生成最多两条汇总通知，每条放 5 条完整推荐。"""
     highlights = highlights[:MAX_RECOMMENDATIONS]
     total_new = sum(section.get("new_neg", 0) for section in sections)
     total_posts = sum(section.get("total", 0) for section in sections)
@@ -94,7 +92,7 @@ def build_digest_messages(
             [
                 "",
                 f"📌 今日推荐候选 1–{len(first_batch)}",
-                "复制需要转发的 △ 条目即可",
+                "点击通知展开完整内容",
                 "",
             ]
         )
@@ -103,7 +101,6 @@ def build_digest_messages(
         lines.extend(["", "未发现新增个人负面舆情。"])
 
     lines.extend(["", "完整 HTML 日报及附件已同步发送至邮箱。"])
-    first_weibo_url = highlights[0][1].url if highlights else ""
     subtitle = period.replace(" ~ ", " 至 ")
     messages = [
         BarkMessage(
@@ -111,7 +108,7 @@ def build_digest_messages(
             subtitle=subtitle,
             body="\n".join(lines),
             level=level,
-            url=run_url or first_weibo_url,
+            url="" if first_batch else run_url,
         )
     ]
 
@@ -122,10 +119,10 @@ def build_digest_messages(
         messages.append(
             BarkMessage(
                 title=f"📌 今日推荐候选 {start}–{end}",
-                subtitle="复制需要转发的 △ 条目即可",
+                subtitle="点击通知展开完整内容",
                 body="\n".join(_recommendation_lines(remaining, start)),
                 level="active",
-                url=run_url or remaining[0][1].url,
+                url="",
             )
         )
     return messages
