@@ -46,7 +46,100 @@ jobs:
             seen-
 
       - name: 单元测试
-        run: pip install pytest && pytest tests/ -q
+        # index.py 属于独立部署的阿里云央媒涉陕版，不在本 GitHub 仓库中。
+        run: >-
+          pip install pytest && pytest tests/ -q
+          --ignore=tests/test_index_bark.py
+          --ignore=tests/test_index_news_filter.py
+
+      - name: 运行舆情监测
+        env:
+          WEIBO_COOKIE: ${{ secrets.WEIBO_COOKIE }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          BARK_GROUP: ${{ vars.BARK_GROUP }}
+          BARK_ICON: ${{ vars.BARK_ICON }}
+          # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: python main.py
+
+      - name: 保存历史状态
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: seen-${{ github.run_id }}
+
+      - name: 上传结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "舆情报告-${{ github.run_number }}"
+          path: |
+            *舆情_*.csv
+            *舆情_*.json
+          retention-days: 30
+          if-no-files-found: ignore
+name: 舆情监测
+
+on:
+  schedule:
+    - cron: '0 20 * * 0-4'   # 北京时间周一至周五 04:00
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      # transformer 情感模型：依赖与模型均有缓存，仅首次运行慢几分钟。
+      # 模型下载失败时代码会自动降级到内置 lite 词典引擎，不会中断日报。
+      - name: 安装情感模型依赖（CPU版torch，有pip缓存）
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers
+
+      - name: 缓存情感模型（首次下载约400MB，之后秒级恢复）
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-erlangshen-sentiment-v1
+
+      # 恢复跨天 seen 状态（cache key 不可复用，用 restore-keys 取最近一次）
+      - name: 恢复历史状态
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: seen-${{ github.run_id }}
+          restore-keys: |
+            seen-
+
+      - name: 单元测试
+        # index.py 属于独立部署的阿里云央媒涉陕版，不在本 GitHub 仓库中。
+        run: >-
+          pip install pytest && pytest tests/ -q
+          --ignore=tests/test_index_bark.py
+          --ignore=tests/test_index_news_filter.py
 
       - name: 运行舆情监测
         env:
