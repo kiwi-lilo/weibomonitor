@@ -42,6 +42,33 @@ def test_digest_is_styled_and_split_into_two_messages():
     assert "<font color=\"warning\">" in messages[0].content
 
 
+def test_long_summaries_are_not_truncated_and_messages_stay_within_limit():
+    sections = [{"city": "汉中", "new_neg": 10, "total": 80, "health_ok": True}]
+    highlights = []
+    summaries = []
+    for number in range(1, 11):
+        weibo = _weibo(number)
+        summary = (
+            f"第{number}条舆情涉及具体地点、责任主体和公共设施维护经过，"
+            "原帖详细说明了问题出现时间、持续状态、处置过程以及尚未公开的维修进度。"
+            "相关数据和事件节点均完整保留，用于说明事情的来龙去脉。"
+        )
+        weibo.summary = summary
+        summaries.append(summary)
+        highlights.append(("汉中", weibo))
+
+    messages = build_digest_messages(
+        sections,
+        "2026-08-03 ~ 2026-08-04",
+        highlights,
+    )
+
+    combined = "\n".join(message.content for message in messages)
+    assert 2 <= len(messages) <= 3
+    assert all(summary in combined for summary in summaries)
+    assert all(len(message.content.encode("utf-8")) <= 3900 for message in messages)
+
+
 def test_alert_message_contains_actionable_context():
     message = build_alert_message("Cookie 失效")
     assert "舆情监测采集异常" in message.content
