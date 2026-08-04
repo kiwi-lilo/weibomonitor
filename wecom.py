@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 
 MAX_RECOMMENDATIONS = 10
 PER_MESSAGE = 5
+MESSAGE_BODY_BUDGET_BYTES = 3100
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,10 @@ def _compact(text: str, limit: int = 110) -> str:
     if len(text) <= limit:
         return text
     return text[:limit - 1].rstrip() + "…"
+
+
+def _full_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().lstrip("△").strip()
 
 
 def _overview(sections: list[dict], period: str, prefix: str = "") -> list[str]:
@@ -57,7 +62,7 @@ def _candidate_markdown(city: str, weibo: Weibo, index: int) -> str:
     label_color = "warning" if weibo.sentiment_label in ("负面", "偏负面") else "comment"
     lines = [
         f"**{index:02d}｜{city} · <font color=\"{label_color}\">{weibo.sentiment_label}</font> · {region} · 热度 {weibo.heat}**",
-        f"> △{_compact(getattr(weibo, 'summary', '') or weibo.text)}",
+        f"> △{_full_text(getattr(weibo, 'summary', '') or weibo.text)}",
     ]
     if weibo.url:
         lines.append(f"> [查看原微博]({weibo.url})　@{_compact(weibo.user, 18)}")
@@ -87,14 +92,33 @@ def build_digest_messages(
         ])
         return [WeComMessage("\n".join(lines))]
 
-    for offset in range(0, len(highlights), PER_MESSAGE):
-        batch = highlights[offset:offset + PER_MESSAGE]
-        start, end = offset + 1, offset + len(batch)
+    batches: list[list[tuple[int, str, Weibo]]] = []
+    current: list[tuple[int, str, Weibo]] = []
+    for index, (city, weibo) in enumerate(highlights, 1):
+        candidate = (index, city, weibo)
+        trial = current + [candidate]
+        trial_body = "\n\n".join(
+            _candidate_markdown(item_city, item_weibo, item_index)
+            for item_index, item_city, item_weibo in trial
+        )
+        if current and (
+            len(current) >= PER_MESSAGE
+            or len(trial_body.encode("utf-8")) > MESSAGE_BODY_BUDGET_BYTES
+        ):
+            batches.append(current)
+            current = [candidate]
+        else:
+            current = trial
+    if current:
+        batches.append(current)
+
+    for page, batch in enumerate(batches):
+        start, end = batch[0][0], batch[-1][0]
         heading = (
             f"### <font color=\"warning\">今日推荐候选 {start:02d}–{end:02d}</font>\n"
             "> 选择需要转发的条目，点击链接查看原文。"
         )
-        if offset == 0:
+        if page == 0:
             lines = _overview(sections, period, heading)
         else:
             lines = [
@@ -105,7 +129,7 @@ def build_digest_messages(
             ]
         lines.extend(["", "\n\n".join(
             _candidate_markdown(city, weibo, index)
-            for index, (city, weibo) in enumerate(batch, start)
+            for index, city, weibo in batch
         )])
         lines.extend([
             "",

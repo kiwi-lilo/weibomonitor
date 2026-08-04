@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import requests
 
@@ -192,8 +193,43 @@ import logging
 
 log = logging.getLogger(__name__)
 
+_SUMMARY_DATA_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:余|多)?(?:年|个月|月|日|户|人次|人|名|次|天|层|栋|部|万元|公里|小时)"
+)
+
+
+def _summary_quality_issue(summary: str, source_text: str) -> str:
+    if "\n" in summary or "\r" in summary:
+        return "摘要出现分段"
+    summary = summary.strip()
+    if not summary.startswith("△"):
+        return "摘要未以△开头"
+
+    body = summary.lstrip("△").strip()
+    if len(source_text) >= 120 and len(body) < 160:
+        return "摘要过短，尚未说清事件经过"
+    if len(body) > 300:
+        return "摘要超过300字"
+
+    first_end = re.search(r"[。！？!?]", body)
+    if not first_end or first_end.end() > 60:
+        return "首句没有简短概括事件核心"
+
+    source_facts = set(_SUMMARY_DATA_RE.findall(source_text or ""))
+    missing_facts = [fact for fact in source_facts if fact not in body]
+    if missing_facts:
+        return f"遗漏原帖数据：{'、'.join(sorted(missing_facts))}"
+    if any(marker in body for marker in ("一是", "二是", "首先", "其次")):
+        return "使用了禁止的罗列式连接词"
+    return ""
+
+
+def _clean_summary(content: str) -> str:
+    return re.sub(r"\s+", " ", content or "").strip()
+
+
 def llm_summarize(top_candidates: list, settings) -> None:
-    """对 Top 10 负面舆情调用 LLM 生成单句总结（专供领导阅示）"""
+    """对 Top 10 负面舆情调用 LLM 生成单段总结（专供领导阅示）。"""
     # 检查是否在 GitHub Secrets 中配置了 API KEY
     if not settings.llm_api_key or not top_candidates:
         return
@@ -208,27 +244,54 @@ def llm_summarize(top_candidates: list, settings) -> None:
     
     log.info("开始生成 Top %d 领导专报摘要...", len(top_candidates))
     for w in top_candidates:
+        source_text = w.text.strip()[:2000]
         prompt = (
             "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
             "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，用于精准概括该舆情事件的核心。"
-            "字数与排版格式：生成的文本总字数需严格控制在100字左右。必须采用纯粹的一段话形式输出，首尾贯通，绝对不可分段。"
-            "核心内容与数据：必须客观说清楚事情的来龙去脉（包含事发地点、前因后果等核心要素），直击矛盾痛点。特别提醒：若提供的原文素材中包含任何具体数据，必须在输出文本中予以完整保留。"
+            "字数与排版格式：在素材信息充足时，生成文本总字数控制在180至260字；素材较短时以事实完整为先，严禁为凑字数编造内容。必须采用纯粹的一段话形式输出，首尾贯通，绝对不可分段。"
+            "叙事顺序：首句概括之后，依次说明事发时间和具体地点、涉及对象与责任主体、问题如何发生及持续多久、目前处置状态或矛盾焦点。原帖未说明的内容不得推测。"
+            "核心内容与数据：必须客观说清楚事情的来龙去脉，保留能够解释事件的关键过程和具体细节，直击矛盾痛点。特别提醒：若提供的原文素材中包含任何具体数据，必须在输出文本中予以完整保留。"
             "内容绝对禁区：不需要阐述事件的影响及群众诉求；绝对不允许在文本中提出任何解决建议或应对措施。"
             "责任性质界定：确保舆情事件发生的责任主体严格限定在政府行政及公共服务工作范畴内，坚决禁止从党口相关工作、司法程序、官员贪腐、普通民事纠纷或诉讼案件等角度进行撰写。"
             "公文文风语态：保持严肃、紧凑的公文语态，行文要高度凝练，坚决禁止使用如“一是、二是，首先、其次”等罗列型连接词。"
-            f"原贴内容：{w.text[:400]}"
+            f"原帖内容：{source_text}"
         )
-        try:
-            resp = requests.post(url, headers=headers, timeout=15, json={
-                "model": settings.llm_model or "gemini-1.5-flash",
-                "temperature": 0.2, # 低温保证客观严肃
-                "messages": [{"role": "user", "content": prompt}],
-            })
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"].strip()
-            # 强行清洗大模型可能附带的标点或换行
-            w.summary = content.replace('\n', '').strip('。，！；.,!; ')
-        except Exception as e:
-            log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
-            # 失败兜底：保留原文，Bark 会提供对应微博的点击入口。
-            w.summary = w.text.strip()
+        previous_summary = ""
+        quality_issue = ""
+        best_summary = ""
+        for attempt in range(2):
+            messages = [{"role": "user", "content": prompt}]
+            if quality_issue:
+                messages.extend([
+                    {"role": "assistant", "content": previous_summary},
+                    {"role": "user", "content": (
+                        f"上一版不合格：{quality_issue}。请保留全部既定格式和内容禁区，"
+                        "重新阅读原帖，把事件经过、关键细节和数据写完整后重写。"
+                    )},
+                ])
+            try:
+                resp = requests.post(url, headers=headers, timeout=20, json={
+                    "model": settings.llm_model or "gemini-1.5-flash",
+                    "temperature": 0.15,
+                    "messages": messages,
+                })
+                resp.raise_for_status()
+                content = _clean_summary(
+                    resp.json()["choices"][0]["message"]["content"]
+                )
+                if len(content) > len(best_summary):
+                    best_summary = content
+                quality_issue = _summary_quality_issue(content, source_text)
+                if quality_issue:
+                    previous_summary = content
+                    log.warning("LLM 摘要需重写 [%s]: %s", getattr(w, 'id', '未知'), quality_issue)
+                    continue
+                w.summary = content
+                break
+            except Exception as e:
+                log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
+                if attempt == 0:
+                    continue
+        else:
+            # 两次均不合格时保留信息量最大的一版；接口完全失败则保留原文。
+            w.summary = best_summary or source_text
