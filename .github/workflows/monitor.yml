@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   monitor:
@@ -69,22 +67,44 @@ jobs:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           BARK_GROUP: ${{ vars.BARK_GROUP }}
           BARK_ICON: ${{ vars.BARK_ICON }}
-          # 可选：自定义域名时填写完整的固定日报地址。
-          # 未配置时会自动使用 https://<owner>.github.io/<repo>/latest.html
-          REPORT_URL: ${{ vars.REPORT_URL }}
+          # 联合报告仓库的固定入口，不随每天的 JSON 文件更新而变化。
+          REPORT_URL: https://kiwi-lilo.github.io/aliyun-opinion-report/
           # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: python main.py
 
-      - name: 配置 GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: 上传 Pages 日报
-        uses: actions/upload-pages-artifact@v3
+      - name: 发布 personal.json 到联合报告仓库
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          REPORT_REPO: kiwi-lilo/aliyun-opinion-report
         with:
-          path: public
+          github-token: ${{ secrets.REPORT_REPO_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const [owner, repo] = process.env.REPORT_REPO.split('/');
+            const path = 'personal.json';
+            const branch = 'gh-pages';
+            const content = Buffer.from(fs.readFileSync(path)).toString('base64');
+            let sha;
+            try {
+              const oldFile = await github.rest.repos.getContent({ owner, repo, path, ref: branch });
+              sha = oldFile.data.sha;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await github.rest.repos.createOrUpdateFileContents({
+              owner,
+              repo,
+              path,
+              branch,
+              message: `更新个人舆情日报 ${new Date().toISOString().slice(0, 10)}`,
+              content,
+              sha,
+            });
+            core.info(`已发布 ${owner}/${repo}/${path}`);
 
       - name: 保存历史状态
         if: always()
@@ -103,18 +123,3 @@ jobs:
             *舆情_*.json
           retention-days: 30
           if-no-files-found: ignore
-
-  deploy-pages:
-    name: 发布舆情日报
-    needs: monitor
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-    steps:
-      - name: 发布到 GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
