@@ -254,7 +254,7 @@ def run(settings: Settings) -> None:
 
     html = build_digest_html(sections, period, leader_text=leader_text)
     save_personal_report_json(
-        build_personal_report_payload(sections, period, top10_items, all_new_items[:100])
+        build_personal_report_payload(sections, period, top10_items, all_new_items[:10])
     )
     web_html = build_web_report_html(sections, period, top10_items)
     save_web_report(web_html)
