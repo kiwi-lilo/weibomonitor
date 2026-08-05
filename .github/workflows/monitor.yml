@@ -5,6 +5,11 @@ on:
     - cron: '0 20 * * 0-4'   # 北京时间周一至周五 04:00
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -64,11 +69,22 @@ jobs:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           BARK_GROUP: ${{ vars.BARK_GROUP }}
           BARK_ICON: ${{ vars.BARK_ICON }}
+          # 可选：自定义域名时填写完整的固定日报地址。
+          # 未配置时会自动使用 https://<owner>.github.io/<repo>/latest.html
+          REPORT_URL: ${{ vars.REPORT_URL }}
           # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: python main.py
+
+      - name: 配置 GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传 Pages 日报
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
 
       - name: 保存历史状态
         if: always()
@@ -87,3 +103,18 @@ jobs:
             *舆情_*.json
           retention-days: 30
           if-no-files-found: ignore
+
+  deploy-pages:
+    name: 发布舆情日报
+    needs: monitor
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: 发布到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
