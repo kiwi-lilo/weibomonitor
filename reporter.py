@@ -235,12 +235,14 @@ def build_personal_report_payload(
     sections: list[dict],
     period: str,
     highlights: list[tuple[str, Weibo]],
+    unsummarized_items: list[tuple[str, Weibo]] | None = None,
 ) -> dict:
     """Build the JSON contract consumed by the shared GitHub Pages dashboard."""
     recommendations = []
     for index, (city, weibo) in enumerate(highlights[:10], 1):
         summary = _clean_personal_summary(weibo)
         recommendations.append({
+            "id": weibo.id,
             "index": index,
             "city": city,
             "label": weibo.sentiment_label,
@@ -251,6 +253,25 @@ def build_personal_report_payload(
             "time": weibo.time,
             "url": weibo.url,
             "copy_text": f"{summary}\n{weibo.url}" if weibo.url else summary,
+        })
+
+    recommended_ids = {weibo.id for _, weibo in highlights[:10]}
+    unsummarized = []
+    for index, (city, weibo) in enumerate(unsummarized_items or [], 1):
+        if weibo.id in recommended_ids:
+            continue
+        unsummarized.append({
+            "id": weibo.id,
+            "index": index,
+            "city": city,
+            "label": weibo.sentiment_label,
+            "region": "、".join(weibo.regions[:2]) or city,
+            "heat": weibo.heat,
+            "text": weibo.text,
+            "user": weibo.user,
+            "time": weibo.time,
+            "url": weibo.url,
+            "copy_text": f"{weibo.text}\n{weibo.url}" if weibo.url else weibo.text,
         })
 
     return {
@@ -273,6 +294,7 @@ def build_personal_report_payload(
             for section in sections
         ],
         "recommendations": recommendations,
+        "unsummarized": unsummarized,
     }
 
 
