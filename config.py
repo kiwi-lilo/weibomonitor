@@ -107,11 +107,7 @@ class Settings:
     def pages_report_url(self) -> str:
         """Fixed Pages URL, derived automatically for github.com Actions."""
         if self.report_url:
-            return (
-                f"{self.report_url}latest.html"
-                if self.report_url.endswith("/")
-                else self.report_url
-            )
+            return self.report_url
 
         repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
         server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")

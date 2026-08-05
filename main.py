@@ -31,9 +31,11 @@ from reporter import (
     build_alert_html,
     build_city_section,
     build_digest_html,
+    build_personal_report_payload,
     build_web_report_html,
     print_report,
     save_files,
+    save_personal_report_json,
     save_web_report,
 )
 from bark import build_alert_message, build_digest_messages, send_bark
@@ -243,6 +245,9 @@ def run(settings: Settings) -> None:
         subject = f"✅ 陕西舆情日报 {month_day} | 各市均无新增负面"
 
     html = build_digest_html(sections, period, leader_text=leader_text)
+    save_personal_report_json(
+        build_personal_report_payload(sections, period, top10_items)
+    )
     web_html = build_web_report_html(sections, period, top10_items)
     save_web_report(web_html)
     send_email(settings, subject, html, attachments=all_files)

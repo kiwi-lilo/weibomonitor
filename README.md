@@ -14,7 +14,7 @@
 - **提速**：关键词首页为空即跳过后续页
 - **transformer 情感复核（GitHub 默认启用）**：Erlangshen-Roberta-110M 中文情感模型对全部微博打分并与词库结论融合，补漏报、消误报；依赖与模型均走 Actions 缓存，仅首次运行慢几分钟。模型不可用时自动降级为内置 lite 词典引擎（零依赖），词库始终保底
 - **可选 LLM 复核**：配置 `LLM_API_BASE / LLM_API_KEY / LLM_MODEL`（任何 OpenAI 兼容接口，如 DeepSeek）后，对负面候选批量精判
-- Python 3.12、logging、64 个回归测试
+- Python 3.12、logging、74 个回归测试
 
 ## 本地运行
 ```bash
@@ -27,19 +27,21 @@ pytest tests/ -v                    # 完整源码测试（含阿里云 index.py
 ```
 
 ## GitHub Actions
-配置 Secrets：`WEIBO_COOKIE`、`SMTP_SERVER`、`SMTP_PORT`、`EMAIL_SENDER`、`EMAIL_PASSWORD`、`EMAIL_RECEIVERS`、`BARK_URL`、`WECOM_WEBHOOK`，可选 `LLM_API_*`。
+配置 Secrets：`WEIBO_COOKIE`、`SMTP_SERVER`、`SMTP_PORT`、`EMAIL_SENDER`、`EMAIL_PASSWORD`、`EMAIL_RECEIVERS`、`BARK_URL`、`WECOM_WEBHOOK`、`REPORT_REPO_TOKEN`，可选 `LLM_API_*`。
 `BARK_URL` 填写 Bark App 中推送地址的前半段，例如 `https://api.day.app/你的设备Key`；自建 Bark 也填写包含设备 Key 的完整地址。`WECOM_WEBHOOK` 填写企业微信群机器人的完整 Webhook 地址。可在 Actions Variables 中设置 `BARK_GROUP` 和 `BARK_ICON`。
 默认每周一至周五北京时间 23:00 运行，也可手动触发。
 
 ### GitHub Pages 固定日报链接
 
-1. 进入仓库 `Settings → Pages`，将 `Source` 设为 `GitHub Actions`。
-2. 手动运行一次“舆情监测”，工作流会生成并发布 `latest.html`。
-3. 企业微信会自动使用
-   `https://<GitHub用户名>.github.io/<仓库名>/latest.html`，以后每天都是同一个地址。
+个人舆情工作流会生成 `personal.json`，并通过 `REPORT_REPO_TOKEN` 写入联合仓库
+`kiwi-lilo/aliyun-opinion-report` 的 `gh-pages` 分支，不会覆盖联合入口页面。
+企业微信固定发送：
+`https://kiwi-lilo.github.io/aliyun-opinion-report/`。
 
-使用自定义域名时，在 Actions Variables 中设置 `REPORT_URL`为完整的
-`latest.html` 地址。GitHub Pages 页面可能对互联网公开，启用前请按仓库与账户类型确认页面可见性。
+联合入口页面由 `aliyun-opinion-report/index.html` 读取同目录的 `personal.json` 与
+`media.json`，因此个人舆情与阿里云央媒涉陕新闻可以在同一个地址切换查看。
+
+GitHub Pages 页面可能对互联网公开，启用前请按仓库与账户类型确认页面可见性。
 
 ## 阿里云央媒版
 

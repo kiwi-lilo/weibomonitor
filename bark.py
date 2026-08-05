@@ -43,7 +43,7 @@ def _recommendation_lines(
         lines.append(
             f"{index:02d}｜{city} · {weibo.sentiment_label} · {region} · 热度 {weibo.heat}"
         )
-        lines.append(f"△{summary}（新浪微博：{weibo.user}）{weibo.url}")
+        lines.append(f"{summary}\n{weibo.url}" if weibo.url else summary)
         lines.append("")
     if lines:
         lines.pop()

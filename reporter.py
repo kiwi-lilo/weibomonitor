@@ -149,13 +149,20 @@ def build_city_section(city: City, results: list[Weibo], new_negatives: list[Wei
     }
 
 
+def _clean_personal_summary(weibo: Weibo) -> str:
+    summary = (getattr(weibo, "summary", "") or weibo.text).lstrip("△").strip()
+    if weibo.url and summary.endswith(weibo.url):
+        summary = summary[:-len(weibo.url)].rstrip()
+    return summary
+
+
 def build_leader_summary_text(top_weibos: list) -> str:
     """生成领导要求的严格文本格式"""
     lines = []
     for w in top_weibos:
         # 如果大模型自己生成了△，这里用 lstrip('△') 给它去掉，防止变成双三角
-        sum_text = w.summary.lstrip("△").strip() if w.summary else (w.text[:20] + "…")
-        lines.append(f"△{sum_text}（新浪微博：{w.user}）{w.url}")
+        sum_text = _clean_personal_summary(w)
+        lines.append(f"{sum_text}\n{w.url}" if w.url else sum_text)
     return "\n".join(lines)
 
 
@@ -190,13 +197,13 @@ def build_web_report_html(
     """Generate the GitHub Pages report with one-click copy controls."""
     recommendations = []
     for index, (city, weibo) in enumerate(highlights[:10], 1):
-        summary = (getattr(weibo, "summary", "") or weibo.text).lstrip("△").strip()
+        summary = _clean_personal_summary(weibo)
         recommendations.append({
             "index": index,
             "city": city,
             "weibo": weibo,
             "summary": summary,
-            "copy_text": f"△{summary}（新浪微博：{weibo.user}）{weibo.url}",
+            "copy_text": f"{summary}\n{weibo.url}" if weibo.url else summary,
         })
 
     template = _env.get_template("web_report.html.j2")
@@ -222,6 +229,65 @@ def save_web_report(html_content: str, out_dir: str = "public") -> str:
     (output_dir / "index.html").write_text(html_content, encoding="utf-8")
     log.info("已生成 GitHub Pages 日报 %s", path)
     return str(path)
+
+
+def build_personal_report_payload(
+    sections: list[dict],
+    period: str,
+    highlights: list[tuple[str, Weibo]],
+) -> dict:
+    """Build the JSON contract consumed by the shared GitHub Pages dashboard."""
+    recommendations = []
+    for index, (city, weibo) in enumerate(highlights[:10], 1):
+        summary = _clean_personal_summary(weibo)
+        recommendations.append({
+            "index": index,
+            "city": city,
+            "label": weibo.sentiment_label,
+            "region": "、".join(weibo.regions[:2]) or city,
+            "heat": weibo.heat,
+            "summary": summary,
+            "user": weibo.user,
+            "time": weibo.time,
+            "url": weibo.url,
+            "copy_text": f"{summary}\n{weibo.url}" if weibo.url else summary,
+        })
+
+    return {
+        "source": "personal",
+        "updated_at": datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
+        "period": period,
+        "stats": {
+            "new_neg": sum(section.get("new_neg", 0) for section in sections),
+            "total_posts": sum(section.get("total", 0) for section in sections),
+            "healthy": sum(bool(section.get("health_ok", True)) for section in sections),
+            "city_count": len(sections),
+        },
+        "cities": [
+            {
+                "city": section.get("city", "-"),
+                "new_neg": section.get("new_neg", 0),
+                "total": section.get("total", 0),
+                "health_ok": bool(section.get("health_ok", True)),
+            }
+            for section in sections
+        ],
+        "recommendations": recommendations,
+    }
+
+
+def save_personal_report_json(
+    payload: dict,
+    path: str = "personal.json",
+) -> str:
+    """Write the personal-opinion payload for the shared Pages repository."""
+    output_path = Path(path)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    log.info("已生成联合 Pages 数据 %s", output_path)
+    return str(output_path)
 
 
 def build_alert_html(reason: str, health_summary: str) -> str:

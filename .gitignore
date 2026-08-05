@@ -5,5 +5,6 @@ __pycache__/
 .venv/
 *舆情_*.csv
 *舆情_*.json
+personal.json
 verify_report_preview.html
 public/

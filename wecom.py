@@ -62,7 +62,7 @@ def _candidate_markdown(city: str, weibo: Weibo, index: int) -> str:
     label_color = "warning" if weibo.sentiment_label in ("负面", "偏负面") else "comment"
     lines = [
         f"**{index:02d}｜{city} · <font color=\"{label_color}\">{weibo.sentiment_label}</font> · {region} · 热度 {weibo.heat}**",
-        f"> △{_full_text(getattr(weibo, 'summary', '') or weibo.text)}",
+        f"> {_full_text(getattr(weibo, 'summary', '') or weibo.text)}",
     ]
     if weibo.url:
         lines.append(f"> [查看原微博]({weibo.url})　@{_compact(weibo.user, 18)}")
@@ -91,7 +91,8 @@ def build_digest_messages(
                     "### <font color=\"warning\">"
                     f"今日推荐候选 {len(highlights)} 条</font>"
                 ),
-                f"> [打开今日舆情清单]({report_url})"
+                f"> [打开今日舆情清单]({report_url})",
+                "> 每条内容可在页面中单独复制。",
             ])
         else:
             lines.extend([
