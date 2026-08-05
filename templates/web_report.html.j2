@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>陕西舆情日报</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #20242a;
+      --muted: #66707c;
+      --line: #dfe3e8;
+      --paper: #ffffff;
+      --surface: #f4f6f8;
+      --charcoal: #262b31;
+      --danger: #b42318;
+      --warning: #b54708;
+      --success: #167353;
+      --link: #1769aa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--surface);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, a { font: inherit; }
+
+    .topbar {
+      background: var(--charcoal);
+      color: #fff;
+    }
+
+    .topbar-inner,
+    main,
+    .footer-inner {
+      width: min(100% - 32px, 860px);
+      margin: 0 auto;
+    }
+
+    .topbar-inner { padding: 24px 0 22px; }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: #b9c0c9;
+      font-size: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.25;
+    }
+
+    .period {
+      margin: 8px 0 0;
+      color: #d3d8df;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    main { padding: 22px 0 36px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .metric + .metric { border-left: 1px solid var(--line); }
+
+    .metric-value {
+      display: block;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .metric-label {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .danger { color: var(--danger); }
+    .success { color: var(--success); }
+
+    .city-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 12px 0 2px;
+      scrollbar-width: thin;
+    }
+
+    .city-stat {
+      flex: 0 0 auto;
+      border-bottom: 2px solid var(--line);
+      padding: 8px 2px 7px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .city-stat strong { color: var(--ink); }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 28px 0 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.4;
+    }
+
+    .count {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .recommendations {
+      display: grid;
+      gap: 10px;
+    }
+
+    .recommendation {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent, var(--warning));
+      border-radius: 6px;
+      padding: 15px 16px;
+    }
+
+    .item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+    }
+
+    .item-meta {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .item-number {
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .copy-button {
+      flex: 0 0 68px;
+      width: 68px;
+      height: 34px;
+      border: 1px solid #aeb6c0;
+      border-radius: 6px;
+      background: #fff;
+      color: #303740;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .copy-button:hover { background: #f2f4f6; }
+    .copy-button:focus-visible { outline: 3px solid #9cc8ec; outline-offset: 2px; }
+    .copy-button[data-state="copied"] {
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .summary {
+      margin: 12px 0 0;
+      font-size: 15px;
+      line-height: 1.8;
+      overflow-wrap: anywhere;
+    }
+
+    .item-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .item-foot span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .source-link {
+      flex: 0 0 auto;
+      color: var(--link);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .source-link:hover { text-decoration: underline; }
+
+    .empty {
+      border: 1px solid #cce5db;
+      border-radius: 6px;
+      background: #f2faf7;
+      color: #176d50;
+      padding: 18px;
+      font-size: 14px;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      background: #eef1f4;
+      color: var(--muted);
+    }
+
+    .footer-inner {
+      padding: 18px 0 24px;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 560px) {
+      .topbar-inner,
+      main,
+      .footer-inner { width: min(100% - 24px, 860px); }
+      .topbar-inner { padding: 20px 0 18px; }
+      h1 { font-size: 23px; }
+      main { padding-top: 14px; }
+      .metric { padding: 13px 6px; }
+      .metric-value { font-size: 21px; }
+      .recommendation { padding: 13px 12px; }
+      .item-foot { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <p class="eyebrow">PUBLIC OPINION DAILY</p>
+      <h1>陕西舆情日报</h1>
+      <p class="period">{{ period }}<br>生成于 {{ generated_at }}</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="metrics" aria-label="今日总览">
+      <div class="metric">
+        <span class="metric-value {% if total_new_neg %}danger{% else %}success{% endif %}">{{ total_new_neg }}</span>
+        <span class="metric-label">新增关注</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ total_posts }}</span>
+        <span class="metric-label">采集微博</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value {% if any_unhealthy %}danger{% else %}success{% endif %}">{{ healthy_count }}/{{ sections|length }}</span>
+        <span class="metric-label">采集健康</span>
+      </div>
+    </section>
+
+    <div class="city-strip" aria-label="城市分布">
+      {% for section in sections %}
+      <div class="city-stat"><strong>{{ section.city }}</strong> 新增 {{ section.new_neg }} 条</div>
+      {% endfor %}
+    </div>
+
+    <div class="section-heading">
+      <h2>今日推荐候选</h2>
+      <span class="count">{{ recommendations|length }} 条</span>
+    </div>
+
+    {% if recommendations %}
+    <section class="recommendations" aria-label="推荐候选列表">
+      {% for item in recommendations %}
+      <article class="recommendation" style="--accent: {{ label_colors.get(item.weibo.sentiment_label, '#64748b') }};">
+        <div class="item-head">
+          <div class="item-meta">
+            <span class="item-number">{{ "%02d"|format(item.index) }}｜{{ item.city }}</span>
+            · {{ item.weibo.sentiment_label }} · {{ item.weibo.regions[:2]|join('、') or item.city }} · 热度 {{ item.weibo.heat }}
+          </div>
+          <button class="copy-button" type="button" aria-label="复制第 {{ item.index }} 条舆情">复制</button>
+        </div>
+        <p class="summary">△{{ item.summary }}</p>
+        <div class="item-foot">
+          <span>@{{ item.weibo.user }} · {{ item.weibo.time }}</span>
+          {% if item.weibo.url %}
+          <a class="source-link" href="{{ item.weibo.url }}" target="_blank" rel="noopener noreferrer">原微博</a>
+          {% endif %}
+        </div>
+        <textarea class="copy-source" hidden>{{ item.copy_text }}</textarea>
+      </article>
+      {% endfor %}
+    </section>
+    {% else %}
+    <div class="empty">未发现新增个人负面舆情。</div>
+    {% endif %}
+  </main>
+
+  <footer>
+    <div class="footer-inner">陕西多市微博舆情监测 · 自动生成</div>
+  </footer>
+
+  <script>
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const input = document.createElement("textarea");
+      input.value = text;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+
+    document.querySelectorAll(".copy-button").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const source = button.closest(".recommendation").querySelector(".copy-source");
+        const originalLabel = button.textContent;
+        try {
+          await copyText(source.value);
+          button.textContent = "已复制";
+          button.dataset.state = "copied";
+        } catch (error) {
+          button.textContent = "失败";
+        }
+        window.setTimeout(() => {
+          button.textContent = originalLabel;
+          delete button.dataset.state;
+        }, 1600);
+      });
+    });
+  </script>
+</body>
+</html>
