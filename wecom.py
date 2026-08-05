@@ -76,10 +76,32 @@ def build_digest_messages(
     period: str,
     highlights: list[tuple[str, Weibo]],
     run_url: str = "",
+    report_url: str = "",
 ) -> list[WeComMessage]:
     highlights = highlights[:MAX_RECOMMENDATIONS]
     total_new = sum(section.get("new_neg", 0) for section in sections)
     messages: list[WeComMessage] = []
+
+    if report_url:
+        lines = _overview(sections, period)
+        if highlights:
+            lines.extend([
+                "",
+                (
+                    "### <font color=\"warning\">"
+                    f"今日推荐候选 {len(highlights)} 条</font>"
+                ),
+                f"> [打开今日舆情清单]({report_url})",
+                "> 每条内容可在页面中单独复制。",
+            ])
+        else:
+            lines.extend([
+                "",
+                "### <font color=\"info\">今日结论</font>",
+                "> 未发现新增个人负面舆情。",
+                f"> [查看今日日报]({report_url})",
+            ])
+        return [WeComMessage("\n".join(lines))]
 
     if not highlights:
         lines = _overview(sections, period)

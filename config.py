@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo
 
 def _load_dotenv() -> None:
@@ -61,6 +61,9 @@ class Settings:
     wecom_webhook: str = field(
         default_factory=lambda: os.environ.get("WECOM_WEBHOOK", "").strip()
     )
+    report_url: str = field(
+        default_factory=lambda: os.environ.get("REPORT_URL", "").strip()
+    )
 
     # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配则退回纯词库研判
     llm_api_base: str = field(default_factory=lambda: os.environ.get("LLM_API_BASE", ""))
@@ -99,6 +102,28 @@ class Settings:
         if server and repository and run_id:
             return f"{server}/{repository}/actions/runs/{run_id}"
         return ""
+
+    @property
+    def pages_report_url(self) -> str:
+        """Fixed Pages URL, derived automatically for github.com Actions."""
+        if self.report_url:
+            return (
+                f"{self.report_url}latest.html"
+                if self.report_url.endswith("/")
+                else self.report_url
+            )
+
+        repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+        server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
+        if server != "https://github.com" or "/" not in repository:
+            return ""
+
+        owner, repo = repository.split("/", 1)
+        owner_path = quote(owner, safe="-._")
+        if repo.lower() == f"{owner}.github.io".lower():
+            return f"https://{owner_path}.github.io/latest.html"
+        repo_path = quote(repo, safe="-._")
+        return f"https://{owner_path}.github.io/{repo_path}/latest.html"
 
     @property
     def llm_ready(self) -> bool:

@@ -6,3 +6,4 @@ __pycache__/
 *舆情_*.csv
 *舆情_*.json
 verify_report_preview.html
+public/

@@ -31,8 +31,10 @@ from reporter import (
     build_alert_html,
     build_city_section,
     build_digest_html,
+    build_web_report_html,
     print_report,
     save_files,
+    save_web_report,
 )
 from bark import build_alert_message, build_digest_messages, send_bark
 from mailer import send_email
@@ -241,10 +243,18 @@ def run(settings: Settings) -> None:
         subject = f"✅ 陕西舆情日报 {month_day} | 各市均无新增负面"
 
     html = build_digest_html(sections, period, leader_text=leader_text)
+    web_html = build_web_report_html(sections, period, top10_items)
+    save_web_report(web_html)
     send_email(settings, subject, html, attachments=all_files)
     for message in build_digest_messages(sections, period, top10_items, settings.run_url):
         send_bark(settings, message)
-    for message in build_wecom_digest_messages(sections, period, top10_items, settings.run_url):
+    for message in build_wecom_digest_messages(
+        sections,
+        period,
+        top10_items,
+        settings.run_url,
+        settings.pages_report_url,
+    ):
         send_wecom(settings, message)
     log.info("✅ 全部 %d 市执行完成", len(CITIES))
 

@@ -8,6 +8,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -179,6 +180,48 @@ def build_digest_html(sections: list[dict], period: str, leader_text: str = "") 
         recommendation_count=len(leader_text.splitlines()) if leader_text else 0,
         label_colors=LABEL_COLORS,
     )
+
+
+def build_web_report_html(
+    sections: list[dict],
+    period: str,
+    highlights: list[tuple[str, Weibo]],
+) -> str:
+    """Generate the GitHub Pages report with one-click copy controls."""
+    recommendations = []
+    for index, (city, weibo) in enumerate(highlights[:10], 1):
+        summary = (getattr(weibo, "summary", "") or weibo.text).lstrip("△").strip()
+        recommendations.append({
+            "index": index,
+            "city": city,
+            "weibo": weibo,
+            "summary": summary,
+            "copy_text": f"△{summary}（新浪微博：{weibo.user}）{weibo.url}",
+        })
+
+    template = _env.get_template("web_report.html.j2")
+    return template.render(
+        period=period,
+        generated_at=datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
+        sections=sections,
+        total_new_neg=sum(section.get("new_neg", 0) for section in sections),
+        total_posts=sum(section.get("total", 0) for section in sections),
+        healthy_count=sum(bool(section.get("health_ok", True)) for section in sections),
+        any_unhealthy=any(not section.get("health_ok", True) for section in sections),
+        recommendations=recommendations,
+        label_colors=LABEL_COLORS,
+    )
+
+
+def save_web_report(html_content: str, out_dir: str = "public") -> str:
+    """Save the fixed Pages entry point and return its path."""
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "latest.html"
+    path.write_text(html_content, encoding="utf-8")
+    (output_dir / "index.html").write_text(html_content, encoding="utf-8")
+    log.info("已生成 GitHub Pages 日报 %s", path)
+    return str(path)
 
 
 def build_alert_html(reason: str, health_summary: str) -> str:
