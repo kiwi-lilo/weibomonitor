@@ -70,10 +70,16 @@ def test_web_report_empty_state():
 def test_personal_report_payload_is_dashboard_contract():
     weibo = _weibo()
     weibo.summary = "△居民反映电梯停运，出行受到影响"
+    other = _weibo()
+    other.id = "web-2"
+    other.text = "另一条尚未生成摘要的新增舆情"
+    other.url = "https://weibo.com/web-2"
+    other.summary = ""
     payload = build_personal_report_payload(
         [{"city": "汉中", "new_neg": 1, "total": 20, "health_ok": True}],
         "2026-08-03 ~ 2026-08-05",
         [("汉中", weibo)],
+        [("汉中", weibo), ("汉中", other)],
     )
 
     item = payload["recommendations"][0]
@@ -87,3 +93,5 @@ def test_personal_report_payload_is_dashboard_contract():
     assert not item["summary"].startswith("△")
     assert item["copy_text"] == f"{item['summary']}\n{item['url']}"
     assert item["url"] == weibo.url
+    assert payload["unsummarized"][0]["id"] == other.id
+    assert payload["unsummarized"][0]["text"] == other.text
