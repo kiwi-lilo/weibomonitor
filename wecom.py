@@ -91,8 +91,7 @@ def build_digest_messages(
                     "### <font color=\"warning\">"
                     f"今日推荐候选 {len(highlights)} 条</font>"
                 ),
-                f"> [打开今日舆情清单]({report_url})",
-                "> 每条内容可在页面中单独复制。",
+                f"> [打开今日舆情清单]({report_url})"
             ])
         else:
             lines.extend([
