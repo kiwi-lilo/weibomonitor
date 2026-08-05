@@ -42,6 +42,34 @@ def test_digest_is_styled_and_split_into_two_messages():
     assert "<font color=\"warning\">" in messages[0].content
 
 
+def test_pages_mode_sends_one_fixed_report_link():
+    sections = [{"city": "汉中", "new_neg": 10, "total": 80, "health_ok": True}]
+    highlights = [("汉中", _weibo(number)) for number in range(1, 11)]
+
+    messages = build_digest_messages(
+        sections,
+        "2026-08-04 ~ 2026-08-05",
+        highlights,
+        report_url="https://example.github.io/monitor/latest.html",
+    )
+
+    assert len(messages) == 1
+    assert "今日推荐候选 10 条" in messages[0].content
+    assert "https://example.github.io/monitor/latest.html" in messages[0].content
+    assert "[查看原微博]" not in messages[0].content
+
+
+def test_pages_report_url_is_derived_from_github_repository(monkeypatch):
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/weibomonitor")
+
+    settings = Settings(cookie="cookie", report_url="")
+
+    assert settings.pages_report_url == (
+        "https://example.github.io/weibomonitor/latest.html"
+    )
+
+
 def test_long_summaries_are_not_truncated_and_messages_stay_within_limit():
     sections = [{"city": "汉中", "new_neg": 10, "total": 80, "health_ok": True}]
     highlights = []
