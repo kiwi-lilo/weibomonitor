@@ -70,6 +70,17 @@ def test_pages_report_url_is_derived_from_github_repository(monkeypatch):
     )
 
 
+def test_pages_report_url_keeps_shared_dashboard_root():
+    settings = Settings(
+        cookie="cookie",
+        report_url="https://kiwi-lilo.github.io/aliyun-opinion-report/",
+    )
+
+    assert settings.pages_report_url == (
+        "https://kiwi-lilo.github.io/aliyun-opinion-report/"
+    )
+
+
 def test_long_summaries_are_not_truncated_and_messages_stay_within_limit():
     sections = [{"city": "汉中", "new_neg": 10, "total": 80, "health_ok": True}]
     highlights = []

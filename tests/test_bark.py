@@ -50,8 +50,10 @@ def test_digest_message_is_mobile_friendly():
     assert message.level == "timeSensitive"
     assert message.url == ""
     assert "01｜榆林 · 负面 · 榆阳区 · 热度 28" in message.body
-    assert "△某小区电梯停运多日" in message.body
-    assert "新浪微博：热心市民" in message.body
+    assert "某小区电梯停运多日" in message.body
+    assert "△某小区电梯停运多日" not in message.body
+    assert "新浪微博：热心市民" not in message.body
+    assert "https://weibo.com/1001" in message.body
 
 
 def test_clean_digest_is_passive():

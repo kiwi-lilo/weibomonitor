@@ -6,7 +6,11 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from models import Weibo
-from reporter import build_web_report_html, save_web_report
+from reporter import (
+    build_personal_report_payload,
+    build_web_report_html,
+    save_web_report,
+)
 
 
 def _weibo() -> Weibo:
@@ -44,7 +48,8 @@ def test_web_report_has_individual_copy_control_and_escapes_content(tmp_path):
     assert os.path.basename(output_path) == "latest.html"
     assert "aria-label=\"复制第 1 条舆情\"" in rendered
     assert "navigator.clipboard.writeText" in rendered
-    assert "△某小区电梯长期停运" in rendered
+    assert "某小区电梯长期停运" in rendered
+    assert "△某小区电梯长期停运" not in rendered
     assert "用户&lt;b&gt;" in rendered
     assert "<b>" not in rendered
     assert os.path.exists(output_path)
@@ -60,3 +65,25 @@ def test_web_report_empty_state():
 
     assert "未发现新增个人负面舆情" in rendered
     assert "class=\"copy-button\"" not in rendered
+
+
+def test_personal_report_payload_is_dashboard_contract():
+    weibo = _weibo()
+    weibo.summary = "△居民反映电梯停运，出行受到影响"
+    payload = build_personal_report_payload(
+        [{"city": "汉中", "new_neg": 1, "total": 20, "health_ok": True}],
+        "2026-08-03 ~ 2026-08-05",
+        [("汉中", weibo)],
+    )
+
+    item = payload["recommendations"][0]
+    assert payload["source"] == "personal"
+    assert payload["stats"] == {
+        "new_neg": 1,
+        "total_posts": 20,
+        "healthy": 1,
+        "city_count": 1,
+    }
+    assert not item["summary"].startswith("△")
+    assert item["copy_text"] == f"{item['summary']}\n{item['url']}"
+    assert item["url"] == weibo.url
