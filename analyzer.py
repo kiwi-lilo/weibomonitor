@@ -262,7 +262,7 @@ def llm_summarize(top_candidates: list, settings) -> None:
     
     log.info("开始生成 Top %d 领导专报摘要...", len(top_candidates))
     for w in top_candidates:
-        source_text = w.text.strip()[:2000]
+        source_text = w.text.strip()[:8000]
         prompt = (
             "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
             "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，用于精准概括该舆情事件的核心。"
