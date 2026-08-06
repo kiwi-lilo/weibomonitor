@@ -57,3 +57,38 @@ def test_different_incidents_in_one_district_are_not_merged():
 
     assert not same_event(elevator, school)
     assert len(deduplicate_event_candidates([("西安", elevator), ("西安", school)])) == 2
+
+
+def test_paraphrased_rumor_posts_about_one_topic_are_deduplicated():
+    first = _weibo(
+        "4",
+        "网传某男艺人涉嫌育有私生子的谣言引发热议，狗仔匿名爆料并将线索指向周杰伦，未提供实质证据",
+        ["不实传闻"],
+        heat=30,
+    )
+    repost = _weibo(
+        "5",
+        "周杰伦与刘姓女股东产子传闻持续发酵，网络爆料全程没有照片或鉴定，相关方面正在辟谣澄清",
+        ["网络传闻"],
+        heat=3,
+    )
+
+    assert same_event(first, repost)
+    assert deduplicate_event_candidates([("西安", first), ("西安", repost)]) == [
+        ("西安", first)
+    ]
+
+
+def test_different_rumors_are_not_merged_without_a_shared_entity():
+    divorce = _weibo(
+        "6",
+        "某演员离婚传闻引发热议，网络爆料指向当事人，相关方面暂无回应",
+        ["网络传闻"],
+    )
+    tax = _weibo(
+        "7",
+        "某歌手涉嫌偷税传闻引发关注，狗仔爆料指向当事人，相关方面暂无回应",
+        ["网络传闻"],
+    )
+
+    assert not same_event(divorce, tax)

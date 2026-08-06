@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from models import Weibo
 from reporter import (
     build_personal_report_payload,
+    build_leader_summary_text,
     build_web_report_html,
     save_web_report,
 )
@@ -49,7 +50,8 @@ def test_web_report_has_individual_copy_control_and_escapes_content(tmp_path):
     assert "aria-label=\"复制第 1 条舆情\"" in rendered
     assert "navigator.clipboard.writeText" in rendered
     assert "某小区电梯长期停运" in rendered
-    assert "△某小区电梯长期停运" not in rendered
+    assert "△某小区电梯长期停运" in rendered
+    assert "（新浪微博：用户&lt;b&gt;）" in rendered
     assert "用户&lt;b&gt;" in rendered
     assert "<b>" not in rendered
     assert os.path.exists(output_path)
@@ -91,7 +93,19 @@ def test_personal_report_payload_is_dashboard_contract():
         "city_count": 1,
     }
     assert not item["summary"].startswith("△")
-    assert item["copy_text"] == f"{item['summary']}\n{item['url']}"
+    assert item["copy_text"] == (
+        f"△{item['summary']}（新浪微博：{item['user']}）{item['url']}"
+    )
     assert item["url"] == weibo.url
     assert payload["unsummarized"][0]["id"] == other.id
     assert payload["unsummarized"][0]["text"] == other.text
+
+
+def test_personal_copy_format_has_triangle_and_source_suffix():
+    weibo = _weibo()
+    weibo.summary = "△某小区电梯停运，居民出行受影响"
+
+    assert build_leader_summary_text([weibo]) == (
+        "△某小区电梯停运，居民出行受影响（新浪微博：用户<b>）"
+        "https://weibo.com/web-1"
+    )

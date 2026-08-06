@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config import TZ
 from wb_parser import parse_time, within_days, clean_text
-from analyzer import analyze, is_official
+from analyzer import analyze, is_entertainment_news, is_official
 from cities import HANZHONG
 from models import Weibo
 
@@ -118,6 +118,48 @@ def test_single_phrase_not_filtered():
 def test_two_phrases_filtered():
     w = _w("我市召开专题会议，会议强调要贯彻落实相关精神", user="热心网友", verified=False)
     assert is_official(w)[0]
+
+
+# ── 内容范围过滤 ──
+
+def test_entertainment_rumor_is_filtered():
+    samples = (
+        "网传周杰伦与刘姓女股东产子，娱乐圈狗仔匿名爆料私生子传闻，"
+        "相关话题因西安公司登上热搜，目前各方正在辟谣澄清",
+        "周杰伦与昆凌相识相恋，早年西安KTV股东同框素材被重新传播，"
+        "经纪公司面对不实传闻被批公关不作为，造谣话题持续发酵",
+    )
+
+    for text in samples:
+        filtered, reason = is_entertainment_news(_w(text))
+        assert filtered, text
+        assert reason.startswith("娱乐新闻")
+
+
+def test_entertainment_filter_is_applied_before_sentiment_analysis():
+    from main import CityMonitor
+
+    monitor = CityMonitor.__new__(CityMonitor)
+    monitor.city = HANZHONG
+    monitor.seen_ids, monitor.seen_fp = set(), set()
+    monitor.results, monitor.filtered = [], []
+    weibo = _w("汉中某明星私生子传闻登上热搜，狗仔爆料后工作室发布辟谣声明")
+
+    assert not monitor._add(weibo)
+    assert not monitor.results
+    assert monitor.filtered[0]["reason"].startswith("娱乐新闻")
+
+
+def test_concert_refund_complaint_is_not_filtered_as_entertainment_news():
+    w = _w("西安某演唱会取消后主办方迟迟不退款，消费者投诉票务平台没人处理")
+
+    assert not is_entertainment_news(w)[0]
+
+
+def test_film_crew_noise_complaint_is_not_filtered_as_entertainment_news():
+    w = _w("西安某剧组连续多日半夜施工扰民，附近居民投诉后仍未停止")
+
+    assert not is_entertainment_news(w)[0]
 
 
 # ── 去重 ──
