@@ -13,6 +13,11 @@ _TOPIC_TERMS = (
     "道路", "停车", "收费", "学校", "食堂", "医院", "医疗", "教育", "垃圾",
     "污染", "拆迁", "征地", "办证", "政务", "快递", "景区", "市场", "商家",
     "自来水", "消防", "路灯", "小区", "开发商", "业主", "工地", "交通",
+    # Celebrity and breaking-news posts often omit the location and repeat
+    # different paraphrases of the same rumor.  Keep these terms in the event
+    # signature so those reposts can be collapsed just like local complaints.
+    "爆料", "传闻", "谣言", "不实", "狗仔", "私生子", "产子", "天王", "艺人",
+    "歌手", "股东", "热搜", "对号入座", "辟谣", "澄清",
 )
 
 _NOISE_PHRASES = (
@@ -22,6 +27,17 @@ _NOISE_PHRASES = (
 
 _DURATION_RE = re.compile(
     r"(?:\d+|一|两|三|四|五|六|七|八|九|十|半)(?:天|日|周|星期|个?月|年|小时)"
+)
+
+_DISTINCTIVE_EVENT_TERMS = frozenset({
+    "爆料", "传闻", "谣言", "不实", "狗仔", "私生子", "产子", "股东",
+    "辟谣", "澄清", "天王", "艺人", "歌手", "热搜", "对号入座",
+})
+
+_GENERIC_SIGNATURE_TERMS = (
+    "网络", "爆料", "传闻", "谣言", "不实", "相关", "网友", "引发", "持续",
+    "热搜", "事件", "平台", "目前", "全程", "没有", "未提", "某", "据称",
+    "指向", "当事", "事人", "方面", "暂无", "回应",
 )
 
 
@@ -60,6 +76,13 @@ def _anchors(weibo: Weibo) -> set[str]:
     return anchors
 
 
+def _distinctive_trigrams(text: str) -> set[str]:
+    return {
+        gram for gram in _ngrams(text, 3)
+        if not any(term in gram for term in _GENERIC_SIGNATURE_TERMS)
+    }
+
+
 def same_event(left: Weibo, right: Weibo) -> bool:
     """保守判断两条不同账号微博是否描述同一具体事件。"""
     if left.id == right.id:
@@ -77,19 +100,46 @@ def same_event(left: Weibo, right: Weibo) -> bool:
 
     sequence_ratio = SequenceMatcher(None, left_text, right_text, autojunk=False).ratio()
     trigram_ratio = _jaccard(_ngrams(left_text, 3), _ngrams(right_text, 3))
-    if sequence_ratio >= 0.76 or trigram_ratio >= 0.36:
-        return True
-
     common_regions = set(left.regions) & set(right.regions)
     common_topics = _topics(left) & _topics(right)
+    if sequence_ratio >= 0.76:
+        return True
+    # A high n-gram score is enough for ordinary service complaints.  For
+    # rumor/news text, generic phrases such as "网络爆料" can inflate that
+    # score, so require the entity-aware branch below instead.
+    if trigram_ratio >= 0.36 and not common_topics & _DISTINCTIVE_EVENT_TERMS:
+        return True
     if not common_regions or not common_topics:
         return False
 
     shared_bigrams = len(_ngrams(left_text, 2) & _ngrams(right_text, 2))
+    shared_trigrams = len(
+        _distinctive_trigrams(left_text) & _distinctive_trigrams(right_text)
+    )
     common_anchors = _anchors(left) & _anchors(right)
+    # Rumor/news rewrites frequently have low sequence similarity, but retain
+    # several distinctive event terms.  This catches reposts such as multiple
+    # accounts paraphrasing one celebrity rumor without weakening the stricter
+    # rules used for ordinary local-service topics.
+    if common_topics & _DISTINCTIVE_EVENT_TERMS and shared_trigrams >= 1:
+        return True
+    common_non_rumor_topics = {
+        topic for topic in common_topics
+        if not any(term in topic for term in _DISTINCTIVE_EVENT_TERMS)
+    }
+    rumor_topics = common_topics & _DISTINCTIVE_EVENT_TERMS
     return (
-        (sequence_ratio >= 0.52 and trigram_ratio >= 0.16 and shared_bigrams >= 6)
-        or (len(common_topics) >= 2 and shared_bigrams >= 7)
+        (
+            sequence_ratio >= 0.52
+            and trigram_ratio >= 0.16
+            and shared_bigrams >= 6
+            and (not rumor_topics or shared_trigrams >= 1)
+        )
+        or (
+            len(common_topics) >= 2
+            and bool(common_non_rumor_topics)
+            and shared_bigrams >= 7
+        )
         or (bool(common_anchors) and len(common_topics) >= 2 and shared_bigrams >= 5)
     )
 

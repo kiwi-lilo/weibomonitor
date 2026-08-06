@@ -56,7 +56,7 @@ def print_report(results: list[Weibo], new_negatives: list[Weibo],
     print("\n" + "▓" * 64)
     print("  📊 监测结果    采集健康度: {}".format(health_summary or "-"))
     print("▓" * 64)
-    print(f"\n  个人微博总量: {len(results)}   新增负面/关注: {len(new_negatives)}   已过滤官方号: {filtered_count}")
+    print(f"\n  个人微博总量: {len(results)}   新增负面/关注: {len(new_negatives)}   已过滤非目标内容: {filtered_count}")
 
     stats = _region_stats(results)
     if stats:
@@ -122,7 +122,8 @@ def save_files(city_short: str, results: list[Weibo], negatives: list[Weibo],
             "period": period,
             "total_personal": len(results),
             "negative": len(negatives),
-            "filtered_official": filtered,   # 含被过滤原文与原因，便于审计误杀
+            # 保留旧字段名以兼容历史附件读取方；内容包含官方号和范围过滤结果。
+            "filtered_official": filtered,
             "all": [w.to_dict() for w in results],
         }, f, ensure_ascii=False, indent=2)
     files.append(jpath)
@@ -153,17 +154,32 @@ def _clean_personal_summary(weibo: Weibo) -> str:
     summary = (getattr(weibo, "summary", "") or weibo.text).lstrip("△").strip()
     if weibo.url and summary.endswith(weibo.url):
         summary = summary[:-len(weibo.url)].rstrip()
+    # A previous run may have persisted the source suffix in the summary.  Keep
+    # the suffix owned by the copy formatter so it is never duplicated.
+    if weibo.user:
+        for marker in (f"（新浪微博：{weibo.user}）", f"（新浪微博:{weibo.user}）"):
+            if summary.endswith(marker):
+                summary = summary[:-len(marker)].rstrip()
     return summary
+
+
+def _personal_copy_text(weibo: Weibo, body: str | None = None) -> str:
+    """Return the stable one-line copy format used by personal-opinion items."""
+    summary = body if body is not None else _clean_personal_summary(weibo)
+    summary = summary.lstrip("△").strip()
+    if weibo.url and summary.endswith(weibo.url):
+        summary = summary[:-len(weibo.url)].rstrip()
+    if weibo.user:
+        for marker in (f"（新浪微博：{weibo.user}）", f"（新浪微博:{weibo.user}）"):
+            if summary.endswith(marker):
+                summary = summary[:-len(marker)].rstrip()
+    source = f"（新浪微博：{weibo.user}）" if weibo.user else ""
+    return f"△{summary}{source}{weibo.url or ''}".rstrip()
 
 
 def build_leader_summary_text(top_weibos: list) -> str:
     """生成领导要求的严格文本格式"""
-    lines = []
-    for w in top_weibos:
-        # 如果大模型自己生成了△，这里用 lstrip('△') 给它去掉，防止变成双三角
-        sum_text = _clean_personal_summary(w)
-        lines.append(f"{sum_text}\n{w.url}" if w.url else sum_text)
-    return "\n".join(lines)
+    return "\n".join(_personal_copy_text(w) for w in top_weibos)
 
 
 _env = Environment(
@@ -203,7 +219,7 @@ def build_web_report_html(
             "city": city,
             "weibo": weibo,
             "summary": summary,
-            "copy_text": f"{summary}\n{weibo.url}" if weibo.url else summary,
+            "copy_text": _personal_copy_text(weibo, summary),
         })
 
     template = _env.get_template("web_report.html.j2")
@@ -252,7 +268,7 @@ def build_personal_report_payload(
             "user": weibo.user,
             "time": weibo.time,
             "url": weibo.url,
-            "copy_text": f"{summary}\n{weibo.url}" if weibo.url else summary,
+            "copy_text": _personal_copy_text(weibo, summary),
         })
 
     recommended_ids = {weibo.id for _, weibo in highlights[:10]}
@@ -271,7 +287,7 @@ def build_personal_report_payload(
             "user": weibo.user,
             "time": weibo.time,
             "url": weibo.url,
-            "copy_text": f"{weibo.text}\n{weibo.url}" if weibo.url else weibo.text,
+            "copy_text": _personal_copy_text(weibo, weibo.text),
         })
 
     return {

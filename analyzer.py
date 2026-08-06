@@ -19,6 +19,7 @@ from models import Weibo
 from cities import City
 from keywords import (
     OFFICIAL_NAME_STRONG, OFFICIAL_NAME_WEAK, OFFICIAL_REASONS, OFFICIAL_PHRASES,
+    ENTERTAINMENT_SUBJECT, ENTERTAINMENT_NEWS, PUBLIC_ISSUE_TERMS,
     STRONG_NEGATIVE, MEDIUM_NEGATIVE, MILD_NEGATIVE, POSITIVE_CONTEXT,
 )
 
@@ -52,6 +53,23 @@ def is_official(w: Weibo) -> tuple[bool, str]:
     if len(hits) >= threshold:
         return True, f"通稿句式{hits[:3]}"
 
+    return False, ""
+
+
+# ══════════════ 内容范围过滤 ══════════════
+
+def is_entertainment_news(w: Weibo) -> tuple[bool, str]:
+    """排除娱乐新闻，同时保留演出退票、剧组扰民等真实公共问题。"""
+    text = w.text
+    public_hits = [term for term in PUBLIC_ISSUE_TERMS if term in text]
+    if public_hits:
+        return False, ""
+
+    subject_hits = [term for term in ENTERTAINMENT_SUBJECT if term in text]
+    news_hits = [term for term in ENTERTAINMENT_NEWS if term in text]
+    if (subject_hits and news_hits) or len(subject_hits) >= 2 or len(news_hits) >= 3:
+        evidence = (subject_hits[:2] + news_hits[:3])[:4]
+        return True, f"娱乐新闻{evidence}"
     return False, ""
 
 
@@ -244,7 +262,7 @@ def llm_summarize(top_candidates: list, settings) -> None:
     
     log.info("开始生成 Top %d 领导专报摘要...", len(top_candidates))
     for w in top_candidates:
-        source_text = w.text.strip()[:8000]
+        source_text = w.text.strip()[:2000]
         prompt = (
             "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
             "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，用于精准概括该舆情事件的核心。"
