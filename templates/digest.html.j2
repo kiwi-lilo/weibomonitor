@@ -61,7 +61,7 @@
                 </tr>
               </table>
 
-              <div style="font-size:13px;color:#6f7682;margin-bottom:16px;">新增 {{ section.new_neg }} 条 · 历史命中 {{ section.old_neg }} 条 · 共采集 {{ section.total }} 条 · 过滤官方号 {{ section.filtered }} 条</div>
+              <div style="font-size:13px;color:#6f7682;margin-bottom:16px;">新增 {{ section.new_neg }} 条 · 历史命中 {{ section.old_neg }} 条 · 共采集 {{ section.total }} 条 · 过滤非目标内容 {{ section.filtered }} 条</div>
 
               {% if section.new_negatives %}
                 {% for weibo in section.new_negatives %}
