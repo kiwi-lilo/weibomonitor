@@ -176,6 +176,7 @@ class CityMonitor:
         section["files"] = files
         section["new_negatives_list"] = new_negatives  # ✅ 新增这行：供主流程提取
         section["new_items_list"] = [w for w in self.results if w.is_new]
+        section["all_items_list"] = self.results
         return section
 
 
@@ -214,15 +215,23 @@ def run(settings: Settings) -> None:
     
     unique_neg: dict[str, tuple[str, Weibo]] = {}
     unique_new: dict[str, tuple[str, Weibo]] = {}
+    unique_all: dict[str, tuple[str, Weibo]] = {}
     for s in sections:
         for w in s.get("new_negatives_list", []):
             unique_neg[w.id] = (s.get("city", "陕西"), w)
         for w in s.get("new_items_list", []):
             unique_new[w.id] = (s.get("city", "陕西"), w)
+        for w in s.get("all_items_list", []):
+            unique_all[w.id] = (s.get("city", "陕西"), w)
     all_new_neg = list(unique_neg.values())
     all_new_items = sorted(
         unique_new.values(),
         key=lambda item: -getattr(item[1], "heat", 0),
+    )
+    all_items = sorted(
+        unique_all.values(),
+        key=lambda item: (getattr(item[1], "time", ""), -getattr(item[1], "heat", 0)),
+        reverse=True,
     )
     
     all_new_neg.sort(
@@ -260,7 +269,14 @@ def run(settings: Settings) -> None:
 
     html = build_digest_html(sections, period, leader_text=leader_text)
     save_personal_report_json(
-        build_personal_report_payload(sections, period, top10_items, all_new_items[:100])
+        build_personal_report_payload(
+            sections,
+            period,
+            top10_items,
+            all_new_items[:100],
+            monitored_items=all_items,
+            new_negative_items=all_new_neg,
+        )
     )
     web_html = build_web_report_html(sections, period, top10_items)
     save_web_report(web_html)

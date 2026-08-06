@@ -6,6 +6,7 @@ import csv
 import json
 import logging
 import os
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -177,6 +178,37 @@ def _personal_copy_text(weibo: Weibo, body: str | None = None) -> str:
     return f"△{summary}{source}{weibo.url or ''}".rstrip()
 
 
+def _personal_excerpt(text: str, max_chars: int = 180) -> str:
+    """Keep one or two source sentences for the lightweight post browser."""
+    value = re.sub(r"\s+", " ", text or "").strip()
+    if not value:
+        return ""
+    sentences = re.split(r"(?<=[。！？!?])", value)
+    excerpt = "".join(sentences[:2]).strip() or value
+    if len(excerpt) <= max_chars:
+        return excerpt
+    return excerpt[:max_chars - 1].rstrip() + "…"
+
+
+def _personal_feed_item(city: str, weibo: Weibo) -> dict:
+    """Build a non-LLM, short entry for the monitored-post browsers."""
+    excerpt = _personal_excerpt(weibo.text)
+    title = re.split(r"(?<=[。！？!?])", excerpt, maxsplit=1)[0].strip() or excerpt
+    return {
+        "id": weibo.id,
+        "city": city,
+        "title": title,
+        "excerpt": excerpt,
+        "label": weibo.sentiment_label,
+        "region": "、".join(weibo.regions[:2]) or city,
+        "heat": weibo.heat,
+        "user": weibo.user,
+        "time": weibo.time,
+        "url": weibo.url,
+        "is_new": bool(weibo.is_new),
+    }
+
+
 def build_leader_summary_text(top_weibos: list) -> str:
     """生成领导要求的严格文本格式"""
     return "\n".join(_personal_copy_text(w) for w in top_weibos)
@@ -252,8 +284,23 @@ def build_personal_report_payload(
     period: str,
     highlights: list[tuple[str, Weibo]],
     unsummarized_items: list[tuple[str, Weibo]] | None = None,
+    monitored_items: list[tuple[str, Weibo]] | None = None,
+    new_negative_items: list[tuple[str, Weibo]] | None = None,
 ) -> dict:
     """Build the JSON contract consumed by the shared GitHub Pages dashboard."""
+    if monitored_items is None:
+        monitored_items = [
+            (section.get("city", "陕西"), weibo)
+            for section in sections
+            for weibo in section.get("all_items_list", [])
+        ]
+    if new_negative_items is None:
+        new_negative_items = [
+            (section.get("city", "陕西"), weibo)
+            for section in sections
+            for weibo in section.get("new_negatives_list", [])
+        ]
+
     recommendations = []
     for index, (city, weibo) in enumerate(highlights[:10], 1):
         summary = _clean_personal_summary(weibo)
@@ -311,6 +358,14 @@ def build_personal_report_payload(
         ],
         "recommendations": recommendations,
         "unsummarized": unsummarized,
+        "monitored_posts": [
+            _personal_feed_item(city, weibo)
+            for city, weibo in monitored_items
+        ],
+        "new_negatives": [
+            _personal_feed_item(city, weibo)
+            for city, weibo in new_negative_items
+        ],
     }
 
 
