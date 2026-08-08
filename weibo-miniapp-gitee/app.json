@@ -1,0 +1,16 @@
+{
+  "pages": [
+    "pages/dashboard/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "陕西舆情工作台",
+    "navigationBarBackgroundColor": "#2b2634",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f3f5f4",
+    "backgroundTextStyle": "dark",
+    "enablePullDownRefresh": true,
+    "onReachBottomDistance": 80
+  },
+  "sitemapLocation": "sitemap.json"
+}
+

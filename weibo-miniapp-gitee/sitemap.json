@@ -1,0 +1,10 @@
+{
+  "desc": "Only invited experience members use this Mini Program.",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}
+

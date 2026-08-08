@@ -1,0 +1,9 @@
+{
+  "name": "weibo-miniapp-gitee",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A native WeChat Mini Program for the Shaanxi public-opinion reports.",
+  "scripts": {
+    "test": "node tests/report.test.js"
+  }
+}
