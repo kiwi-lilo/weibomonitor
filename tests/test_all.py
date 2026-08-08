@@ -252,9 +252,9 @@ def test_lite_scorer_directly():
     assert s[0] > 0.75 and s[1] < 0.35, s
 
 
-# ── 同名地名消歧（西乡问题） ──
+# ── 同名及歧义地名消歧 ──
 
-from cities import XIAN
+from cities import BAOJI, XIAN, XIANYANG, YULIN
 
 
 def test_shenzhen_xixiang_rejected():
@@ -279,3 +279,167 @@ def test_xian_changan_disambiguation():
     assert not XIAN.match_regions("长安汽车4S店太坑了，避雷，强制消费")
     assert "长安区" in XIAN.match_regions("西安长安区的公交太难等了，投诉没用")
     assert "长安区" in XIAN.match_regions("长安区韦曲街道垃圾遍地没人管")
+
+
+def test_ambiguous_region_aliases_require_local_anchor():
+    """项目名、片区名等裸简称不能单独证明属于目标城市。"""
+    cases = (
+        (XIAN, "贵州省普安县东方新城项目拖欠80余名农民工工资"),
+        (XIAN, "北京丰台区三环新城店服务太差，消费者投诉"),
+        (BAOJI, "济宁太白湖新区购物广场烂尾多年无人处理"),
+        (XIANYANG, "江西萍乡武功山景区乱收费，游客投诉"),
+        (YULIN, "外地横山镇道路施工扰民，居民多次投诉"),
+        (HANZHONG, "西乡这边物业乱收费，一直没人管"),
+        (XIAN, "镇江焦山碑林石刻清幽，但景区服务太差"),
+        (XIAN, "北国李未央称偶像遭到区别对待，要求曝光"),
+        (XIAN, "蓝田玉商家拒绝退款，消费者投诉无门"),
+        (BAOJI, "弱柳扶风造型翻车，假睫毛需要避雷"),
+        (BAOJI, "这家岐山臊子面餐馆服务太差"),
+        (XIANYANG, "显示器三原色异常，售后一直不处理"),
+        (XIANYANG, "网店出售的淳化元宝疑似假货"),
+        (YULIN, "京剧中的张定边足智多谋，表演精彩"),
+    )
+    for city, text in cases:
+        assert not city.match_regions(text), (city.short, text)
+
+
+def test_ambiguous_region_aliases_with_local_anchor_are_kept():
+    """目标市、省或完整行政区名可确认歧义简称的属地。"""
+    cases = (
+        (XIAN, "西安航天新城项目停工，业主投诉无门", "西安市"),
+        (XIAN, "航天新城星河九号多年烂尾，业主要求解决", "西安市"),
+        (XIAN, "新城区某小区长期停水，居民多次反映", "新城区"),
+        (BAOJI, "宝鸡太白一处工地拖欠工资", "太白县"),
+        (BAOJI, "太白县某小区物业乱收费", "太白县"),
+        (XIANYANG, "咸阳武功一企业长期拖欠工资", "武功县"),
+        (YULIN, "榆林横山一煤矿拖欠工人工资", "横山区"),
+        (HANZHONG, "汉中西乡的道路一直没人修", "西乡县"),
+        (XIAN, "西安市未央区一小区长期停水", "未央区"),
+        (XIAN, "碑林区一施工现场夜间噪音扰民", "碑林区"),
+        (XIAN, "西安莲湖一商场存在消防隐患", "莲湖区"),
+        (XIAN, "蓝田县某项目拖欠农民工工资", "蓝田县"),
+        (BAOJI, "宝鸡金台一物业长期乱收费", "金台区"),
+        (BAOJI, "扶风县某企业欠薪数月", "扶风县"),
+        (XIANYANG, "咸阳三原一工地扬尘扰民", "三原县"),
+        (XIANYANG, "淳化县某道路多年未维修", "淳化县"),
+        (YULIN, "榆林定边一项目拖欠工程款", "定边县"),
+    )
+    for city, text, expected_region in cases:
+        assert expected_region in city.match_regions(text), (city.short, text)
+
+
+def test_guizhou_oriental_new_city_is_not_xian():
+    text = (
+        "贵州普安县东方新城项目超80名农民工被长期拖欠117.45万元工资。"
+        "2021年1月至2022.5期间，袁国红等80余名农民工在该属地政府监管的城建项目务工，"
+        "总计产生167.45万元欠薪，开发商仅支付50万元，剩余款项长期被拖欠。"
+        "针对该事件，住建局与人社局存在违规审批分包问题，未要求总承包企业缴纳农民工工资保证金，"
+        "住建局未落实实名制及分账管理要求，劳动监察大队履职不力且推诿卸责。"
+    )
+    assert not XIAN.match_regions(text)
+
+
+def test_named_local_new_city_is_city_level_only():
+    assert XIAN.match_regions("西安航天新城项目停工，业主投诉无门") == ["西安市"]
+
+
+def test_explicit_external_place_conflicts_are_rejected():
+    cases = (
+        (XIAN, "黑龙江省牡丹江市西安区一饭店油烟扰民"),
+        (XIAN, "呼和浩特市新城区某汽车店拒绝退款"),
+        (XIAN, "石家庄市长安区一小区物业乱收费"),
+        (YULIN, "甘肃敦煌榆林窟景区服务差，游客投诉"),
+        (HANZHONG, "南京汉中路一家商场强制消费"),
+        (XIAN, "西安网友转发：呼和浩特市新城区某汽车店拒绝退款"),
+        (BAOJI, "陕西网友关注济宁太白湖新区项目烂尾"),
+        (XIANYANG, "咸阳网友转发江西武功山景区投诉"),
+        (HANZHONG, "汉中网友转发：深圳西乡中介押金不退"),
+        (XIAN, "西安网友关注：东莞市长安区小区投诉"),
+        (BAOJI, "宝鸡网友转发：山东岐山小区投诉"),
+        (XIANYANG, "咸阳网友转发：外地渭城项目投诉"),
+        (XIAN, "西安网友关注：北京丰台三环新城项目投诉"),
+        (XIAN, "察县新城区某购物中心噪音扰民"),
+        (XIAN, "韩城市新城区文秀园业主投诉"),
+        (XIAN, "郑州市新城区某商场强制消费"),
+        (XIAN, "河南省新城区某商场强制消费"),
+        (HANZHONG, "南京市西乡县某小区物业投诉"),
+        (HANZHONG, "四川省西乡县某小区物业投诉"),
+        (XIAN, "西安网友转发：外地新城项目投诉"),
+        (XIAN, "陕西省某地新城项目投诉"),
+    )
+    for city, text in cases:
+        assert not city.match_regions(text), (city.short, text)
+
+
+def test_mentions_alone_are_not_location_evidence():
+    assert not XIAN.match_regions(
+        "微众银行每天打骚扰电话，请停止联系 @西安网警 @广州网警 @深圳网警"
+    )
+    assert not XIAN.match_regions(
+        "//@北国李未央:归还五代现top高铭阳，应当曝光区别对待"
+    )
+
+
+def test_mention_without_separator_does_not_hide_location():
+    regions = XIAN.match_regions("@西安网警请关注西安市未央区某小区连续停水")
+    assert "西安市" in regions
+    assert "未央区" in regions
+
+
+def test_external_reject_terms_ignore_spacing():
+    assert not XIAN.match_regions("黑龙江省牡丹江市 西安区一饭店油烟扰民")
+    assert not HANZHONG.match_regions("深圳市 宝安区 西乡街道乱收费")
+
+
+def test_location_outside_mentions_is_still_kept():
+    text = "@西安网警 请关注：西安市未央区某小区连续停水三天"
+    regions = XIAN.match_regions(text)
+    assert "西安市" in regions
+    assert "未央区" in regions
+
+
+def test_source_identity_is_not_a_city_anchor():
+    assert not XIAN.match_regions("陕西网友关注：某地新城项目投诉")
+    assert not XIAN.match_regions("西安市网友转发：呼和浩特市新城区某店投诉")
+    regions = XIAN.match_regions("西安网友反映：西安市未央区某小区连续停水")
+    assert "未央区" in regions
+
+
+def test_city_names_inside_external_road_names_are_rejected():
+    assert not XIAN.match_regions("大连西安路一家商场强制消费")
+    assert not XIAN.match_regions("大连市西安区一家商场强制消费")
+    assert not XIANYANG.match_regions("天津咸阳路小区物业不作为")
+    assert not XIANYANG.match_regions("天津市咸阳路小区物业不作为")
+    assert not HANZHONG.match_regions("南京汉中路一家商场强制消费")
+
+
+def test_local_full_name_survives_external_reference():
+    assert "未央区" in XIAN.match_regions(
+        "西安市未央区小区停水，同时提及牡丹江市西安区"
+    )
+    assert "太白县" in BAOJI.match_regions(
+        "宝鸡太白县小区投诉，同时对比济宁太白湖"
+    )
+    assert "武功县" in XIANYANG.match_regions(
+        "咸阳武功县项目投诉，文中提及武功山旅游"
+    )
+
+
+def test_specific_conflict_does_not_block_real_dingbian_project():
+    assert "定边县" in YULIN.match_regions(
+        "我在定边项目部施工三个月，承包方一直拖欠工资"
+    )
+    assert not YULIN.match_regions("京剧人物张定边的故事引发关注")
+    assert not YULIN.match_regions("施工方尚未确定边界，双方发生争议")
+    assert "定边县" in YULIN.match_regions(
+        "定边县施工方尚未确定边界，群众要求尽快处理"
+    )
+
+
+def test_disambiguation_configuration_uses_known_region_keywords():
+    for city in (YULIN, HANZHONG, XIAN, BAOJI, XIANYANG):
+        keywords = set(city.all_region_kw)
+        assert set(city.deny) <= keywords
+        assert set(city.anchor_required) <= keywords
+        assert len(city.reject_terms) == len(set(city.reject_terms))
+        assert all(city.anchor_required.values())
