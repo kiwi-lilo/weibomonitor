@@ -3,7 +3,7 @@ module.exports = {
   dataMode: "mock",
 
   gitee: {
-    owner: "your-gitee-account",
+    owner: "yanglx321",
     repo: "weibo-report-data",
     branch: "master",
     personalFile: "personal.json",
