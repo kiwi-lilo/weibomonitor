@@ -1,0 +1,225 @@
+<view class="page-shell">
+  <view class="masthead">
+    <view class="masthead-inner">
+      <view class="brand-row">
+        <view class="brand-copy">
+          <text class="kicker">SHAANXI SIGNAL DESK</text>
+          <text class="brand-title">陕西舆情工作台</text>
+          <text class="updated-line">{{updatedLine}}</text>
+        </view>
+        <button
+          class="refresh-button {{refreshing ? 'is-refreshing' : ''}}"
+          bindtap="onRefreshTap"
+          aria-label="刷新日报"
+          disabled="{{refreshing}}"
+        >↻</button>
+      </view>
+
+      <view class="status-row">
+        <view class="status status-{{statusKind}}">
+          <view class="status-dot"></view>
+          <text>{{statusText}}</text>
+        </view>
+        <text class="source-badge">{{sourceBadge}}</text>
+      </view>
+
+      <view class="tabs" role="tablist" aria-label="报告类型">
+        <button
+          wx:for="{{tabs}}"
+          wx:key="id"
+          class="tab {{item.selected ? 'is-selected' : ''}}"
+          data-tab="{{item.id}}"
+          bindtap="onTabTap"
+          aria-label="{{item.label}}，{{item.count}} 条"
+        >
+          <text>{{item.label}}</text>
+          <text class="tab-count">{{item.count}}</text>
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view class="content">
+    <view wx:if="{{loading}}" class="loading-state">
+      <view class="spinner"></view>
+      <text>正在读取最新日报</text>
+    </view>
+
+    <view wx:if="{{fatalError}}" class="error-state">
+      <text class="error-title">数据暂时不可用</text>
+      <text class="error-message">{{fatalError}}</text>
+      <button class="retry-button" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <view wx:if="{{warnings.length}}" class="warning-band">
+      <text wx:for="{{warnings}}" wx:key="*this">{{item}}</text>
+    </view>
+
+    <view wx:if="{{!fatalError && !loading}}">
+      <view class="metrics">
+        <block wx:for="{{metrics}}" wx:key="label">
+          <button
+            wx:if="{{item.action}}"
+            class="metric metric-{{index}} metric-action"
+            data-action="{{item.action}}"
+            bindtap="onMetricTap"
+          >
+            <text class="metric-value">{{item.value}}</text>
+            <text class="metric-label">{{item.label}} · 查看</text>
+          </button>
+          <view wx:else class="metric metric-{{index}}">
+            <text class="metric-value">{{item.value}}</text>
+            <text class="metric-label">{{item.label}}</text>
+          </view>
+        </block>
+      </view>
+
+      <view wx:if="{{browser.visible}}" class="record-browser" id="record-browser">
+        <view class="section-head compact-head">
+          <view>
+            <text class="section-label">{{browser.label}}</text>
+            <text class="section-title small-title">{{browser.title}}</text>
+          </view>
+          <view class="head-actions">
+            <text class="result-count">{{browser.countText}}</text>
+            <button class="icon-command" bindtap="onCloseBrowser" aria-label="收起记录">×</button>
+          </view>
+        </view>
+        <scroll-view class="record-list" scroll-y enhanced show-scrollbar="{{false}}">
+          <view wx:if="{{!browser.items.length}}" class="empty-state">暂无可浏览内容</view>
+          <view wx:for="{{browser.items}}" wx:key="key" class="record-row">
+            <text class="record-number">{{item.indexLabel}}</text>
+            <view class="record-main">
+              <text class="record-title">{{item.title}}</text>
+              <text wx:if="{{item.excerpt}}" class="record-excerpt">{{item.excerpt}}</text>
+              <text class="record-meta">{{item.meta}}</text>
+              <view class="record-actions">
+                <button class="text-command" data-index="{{index}}" bindtap="onCopyBrowser">复制内容</button>
+                <button wx:if="{{item.hasLink}}" class="text-command secondary-command" data-index="{{index}}" bindtap="onCopyBrowserLink">复制链接</button>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view class="section-head">
+        <view>
+          <text class="section-label">{{sectionLabel}}</text>
+          <text class="section-title">{{panelTitle}}</text>
+        </view>
+        <text class="result-count">{{resultCount}}</text>
+      </view>
+
+      <scroll-view class="filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="filter-row">
+          <button
+            wx:for="{{filters}}"
+            wx:key="value"
+            class="filter-button {{item.selected ? 'is-selected' : ''}}"
+            data-filter="{{item.value}}"
+            bindtap="onFilterTap"
+          >{{item.label}}</button>
+        </view>
+      </scroll-view>
+
+      <view class="search-box">
+        <text class="search-symbol">⌕</text>
+        <input
+          class="search-input"
+          value="{{query}}"
+          bindinput="onSearchInput"
+          placeholder="搜索城市、摘要、用户或媒体"
+          confirm-type="search"
+        />
+        <button wx:if="{{query}}" class="clear-button" bindtap="onClearSearch" aria-label="清除搜索">×</button>
+      </view>
+
+      <view class="issue-list">
+        <view wx:if="{{!issues.length}}" class="empty-state">当前报告没有符合条件的内容</view>
+        <view wx:for="{{issues}}" wx:key="key" class="issue-card issue-{{item.levelClass}}">
+          <text class="issue-number">{{item.indexLabel}}</text>
+          <view class="issue-main">
+            <view class="issue-top">
+              <view class="issue-heading-wrap">
+                <text class="issue-heading">{{item.heading}}</text>
+                <text class="issue-tag tag-{{item.levelClass}}">{{item.label}}</text>
+              </view>
+              <button class="copy-button" data-index="{{index}}" bindtap="onCopyIssue">复制</button>
+            </view>
+            <text class="issue-meta">{{item.meta}}</text>
+            <text wx:if="{{item.body}}" class="issue-body">{{item.body}}</text>
+            <view class="issue-footer">
+              <text class="issue-author">{{item.author}}</text>
+              <button wx:if="{{item.hasLink}}" class="link-command" data-index="{{index}}" bindtap="onCopyIssueLink">复制原文链接</button>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="signal-section">
+        <view class="section-head compact-head">
+          <view>
+            <text class="section-label">SIGNAL MAP</text>
+            <text class="section-title small-title">{{visual.title}}</text>
+          </view>
+          <view class="ratio-box">
+            <text class="ratio-value">{{visual.ratio}}%</text>
+            <text class="ratio-label">{{visual.focusLabel}}</text>
+          </view>
+        </view>
+
+        <view class="visual-facts">
+          <view class="visual-fact">
+            <text>{{visual.totalLabel}}</text>
+            <text class="fact-value">{{visual.total}}</text>
+          </view>
+          <view class="visual-fact">
+            <text>{{visual.secondLabel}}</text>
+            <text class="fact-value">{{visual.secondValue}}</text>
+          </view>
+          <view class="visual-fact last-fact">
+            <text>当前状态</text>
+            <text class="fact-value status-value">{{statusText}}</text>
+          </view>
+        </view>
+
+        <view class="visual-list">
+          <view wx:if="{{!visual.rows.length}}" class="empty-state small-empty">暂无态势数据</view>
+          <view wx:for="{{visual.rows}}" wx:key="name" class="visual-row">
+            <view class="visual-label-row">
+              <text class="visual-name">{{item.name}}</text>
+              <text class="visual-detail">{{item.detail}}</text>
+            </view>
+            <view class="visual-track"><view class="visual-fill" style="width: {{item.percent}}%;"></view></view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{secondary.visible}}" class="secondary-section">
+        <view class="section-head compact-head">
+          <view>
+            <text class="section-label">{{secondary.label}}</text>
+            <text class="section-title small-title">{{secondary.title}}</text>
+          </view>
+          <text class="result-count">{{secondary.countText}}</text>
+        </view>
+        <view class="secondary-list">
+          <view wx:for="{{secondary.items}}" wx:key="key" class="secondary-row">
+            <view class="secondary-main">
+              <text class="secondary-title">{{item.title}}</text>
+              <text class="secondary-meta">{{item.meta}}</text>
+            </view>
+            <view class="secondary-actions">
+              <button class="icon-command small-command" data-index="{{index}}" bindtap="onCopySecondary" aria-label="复制内容">⧉</button>
+              <button wx:if="{{item.hasLink}}" class="icon-command small-command" data-index="{{index}}" bindtap="onCopySecondaryLink" aria-label="复制链接">↗</button>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="footer">
+    <text>联合日报 · 下拉可刷新</text>
+  </view>
+</view>
