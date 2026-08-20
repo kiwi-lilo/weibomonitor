@@ -14,7 +14,7 @@ import re
 
 import requests
 
-from config import Settings
+from config import DEFAULT_LLM_API_BASE, DEFAULT_LLM_MODEL, Settings
 from models import Weibo
 from cities import City
 from keywords import (
@@ -215,6 +215,17 @@ _SUMMARY_DATA_RE = re.compile(
     r"\d+(?:\.\d+)?(?:余|多)?(?:年|个月|月|日|户|人次|人|名|次|天|层|栋|部|万元|公里|小时)"
 )
 
+_SUMMARY_BOILERPLATE = (
+    "信息来源为",
+    "事件经过为",
+    "争议或疑似原因在于",
+    "造成影响方面",
+    "群众反映及当前进展方面",
+    "相关舆情持续一段时间",
+    "部分网络用户近期围绕",
+    "原文未提及",
+)
+
 
 def _summary_quality_issue(summary: str, source_text: str) -> str:
     if "\n" in summary or "\r" in summary:
@@ -239,6 +250,8 @@ def _summary_quality_issue(summary: str, source_text: str) -> str:
         return f"遗漏原帖数据：{'、'.join(sorted(missing_facts))}"
     if any(marker in body for marker in ("一是", "二是", "首先", "其次")):
         return "使用了禁止的罗列式连接词"
+    if any(marker in body for marker in _SUMMARY_BOILERPLATE):
+        return "使用了模板化套话，需改为自然叙事"
     return ""
 
 
@@ -252,17 +265,19 @@ def llm_summarize(top_candidates: list, settings) -> None:
     if not settings.llm_api_key or not top_candidates:
         return
     
-    # 默认使用 Google 的 OpenAI 兼容接口，如果 GitHub Secrets 没填 BASE 就用默认的
-    base_url = (settings.llm_api_base or "https://generativelanguage.googleapis.com/v1beta/openai/").rstrip("/")
+    # 默认使用 DeepSeek 的 OpenAI 兼容接口；显式配置仍优先，避免把已有部署配置静默改掉。
+    base_url = (settings.llm_api_base or DEFAULT_LLM_API_BASE).rstrip("/")
     url = f"{base_url}/chat/completions"
     headers = {
         "Authorization": f"Bearer {settings.llm_api_key}",
         "Content-Type": "application/json"
     }
     
-    log.info("开始生成 Top %d 领导专报摘要...", len(top_candidates))
+    model = settings.llm_model or DEFAULT_LLM_MODEL
+    log.info("开始生成 Top %d 领导专报摘要（模型=%s，接口=%s）...",
+             len(top_candidates), model, base_url)
     for w in top_candidates:
-        source_text = w.text.strip()[:2000]
+        source_text = w.text.strip()[:8000]
         prompt = (
             "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
             "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，直接概括“地点、事件、涉及主体和持续时间”。"
@@ -289,8 +304,8 @@ def llm_summarize(top_candidates: list, settings) -> None:
                 ])
             try:
                 resp = requests.post(url, headers=headers, timeout=20, json={
-                    "model": settings.llm_model or "gemini-1.5-flash",
-                    "temperature": 0.15,
+                    "model": model,
+                    "temperature": 0.1,
                     "messages": messages,
                 })
                 resp.raise_for_status()

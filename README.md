@@ -14,7 +14,7 @@
 - **娱乐新闻过滤**：明星爆料、恋情、饭圈、影视综艺等内容不进入个人舆情；演唱会退票、剧组扰民、演员欠薪等真实公共问题仍保留
 - **提速**：关键词首页为空即跳过后续页
 - **transformer 情感复核（GitHub 默认启用）**：Erlangshen-Roberta-110M 中文情感模型对全部微博打分并与词库结论融合，补漏报、消误报；依赖与模型均走 Actions 缓存，仅首次运行慢几分钟。模型不可用时自动降级为内置 lite 词典引擎（零依赖），词库始终保底
-- **可选 LLM 复核**：配置 `LLM_API_BASE / LLM_API_KEY / LLM_MODEL`（任何 OpenAI 兼容接口，如 DeepSeek）后，对负面候选批量精判
+- **个人舆情摘要**：默认通过 DeepSeek `deepseek-v4-flash` 生成自然成段的领导专报；配置 `LLM_API_BASE / LLM_API_KEY / LLM_MODEL`（任何 OpenAI 兼容接口）即可覆盖默认模型，未配置 API Key 时跳过调用
 - Python 3.12、logging、74 个回归测试
 
 ## 本地运行
@@ -28,7 +28,7 @@ pytest tests/ -v                    # 完整源码测试（含阿里云 index.py
 ```
 
 ## GitHub Actions
-配置 Secrets：`WEIBO_COOKIE`、`SMTP_SERVER`、`SMTP_PORT`、`EMAIL_SENDER`、`EMAIL_PASSWORD`、`EMAIL_RECEIVERS`、`BARK_URL`、`WECOM_WEBHOOK`、`REPORT_REPO_TOKEN`，可选 `LLM_API_*`。
+配置 Secrets：`WEIBO_COOKIE`、`SMTP_SERVER`、`SMTP_PORT`、`EMAIL_SENDER`、`EMAIL_PASSWORD`、`EMAIL_RECEIVERS`、`BARK_URL`、`WECOM_WEBHOOK`、`REPORT_REPO_TOKEN`，以及用于摘要的 `LLM_API_KEY`。GitHub Actions 已固定使用 DeepSeek `https://api.deepseek.com` 与 `deepseek-v4-flash`；请将 `LLM_API_KEY` 的值更新为 DeepSeek API Key，旧 Gemini Key 不能复用。手动或本地运行时仍可用 `LLM_API_BASE`、`LLM_MODEL` 覆盖服务商和模型。
 `BARK_URL` 填写 Bark App 中推送地址的前半段，例如 `https://api.day.app/你的设备Key`；自建 Bark 也填写包含设备 Key 的完整地址。`WECOM_WEBHOOK` 填写企业微信群机器人的完整 Webhook 地址。可在 Actions Variables 中设置 `BARK_GROUP` 和 `BARK_ICON`。
 默认每周一至周五北京时间 23:00 运行，也可手动触发。
 

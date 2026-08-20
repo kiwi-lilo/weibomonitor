@@ -30,6 +30,11 @@ SEEN_MAX = 20000          # 每个城市 seen 列表最多保留多少条 id
 MAX_PAGES = int(os.environ.get("MAX_PAGES", "1"))  # 每个搜索组合翻几页
 DAYS_BACK = 2             # 监测最近 N 天
 
+# 个人舆情摘要默认走 DeepSeek 的 OpenAI 兼容接口。仍可通过 LLM_API_*
+# 环境变量覆盖，便于在本地或 Actions 中切换其他兼容服务。
+DEFAULT_LLM_API_BASE = "https://api.deepseek.com"
+DEFAULT_LLM_MODEL = "deepseek-v4-flash"
+
 
 def _split_receivers(raw: str) -> list[str]:
     return [receiver.strip() for receiver in raw.split(",") if receiver.strip()]
@@ -65,10 +70,18 @@ class Settings:
         default_factory=lambda: os.environ.get("REPORT_URL", "").strip()
     )
 
-    # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配则退回纯词库研判
-    llm_api_base: str = field(default_factory=lambda: os.environ.get("LLM_API_BASE", ""))
+    # 可选：OpenAI 兼容接口（DeepSeek / 通义 / OpenAI 均可），不配 key 则跳过 LLM
+    llm_api_base: str = field(
+        default_factory=lambda: (
+            os.environ.get("LLM_API_BASE") or DEFAULT_LLM_API_BASE
+        ).strip().rstrip("/")
+    )
     llm_api_key: str = field(default_factory=lambda: os.environ.get("LLM_API_KEY", ""))
-    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
+    llm_model: str = field(
+        default_factory=lambda: (
+            os.environ.get("LLM_MODEL") or DEFAULT_LLM_MODEL
+        ).strip()
+    )
 
     @property
     def bark_ready(self) -> bool:
