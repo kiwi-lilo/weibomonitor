@@ -69,10 +69,11 @@ jobs:
           BARK_ICON: ${{ vars.BARK_ICON }}
           # 联合报告仓库的固定入口，不随每天的 JSON 文件更新而变化。
           REPORT_URL: https://kiwi-lilo.github.io/aliyun-opinion-report/
-          # 可选：配置后启用 LLM 复核（OpenAI 兼容接口）
-          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          # 个人舆情摘要固定使用 DeepSeek V4 Flash；密钥仍在 GitHub Secrets 管理。
+          # 请将 LLM_API_KEY 更新为 DeepSeek API Key，旧 Gemini Key 不能复用。
+          LLM_API_BASE: https://api.deepseek.com
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_MODEL: deepseek-v4-flash
         run: python main.py
 
       - name: 发布 personal.json 到联合报告仓库
