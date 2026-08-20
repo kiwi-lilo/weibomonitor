@@ -63,10 +63,10 @@ def test_personal_summary_keeps_format_and_retries_short_output(monkeypatch):
     prompt = requests[0]["json"]["messages"][0]["content"]
     assert len(requests) == 2
     assert "文本最开头必须带有“△”符号" in prompt
-    assert "必须采用纯粹的一段话形式输出" in prompt
+    assert "只输出一个自然段，不加标题、不分点、不作评论" in prompt
     assert "不需要阐述事件的影响及群众诉求" in prompt
     assert "绝对不允许在文本中提出任何解决建议" in prompt
-    assert "事发时间和具体地点" in prompt
+    assert "保留关键地点、时间、数字、道路名称和相关主体" in prompt
     assert "转发3次" not in prompt
     assert "发布时间为" not in prompt
     assert f"原帖内容：{source_text}" in prompt
