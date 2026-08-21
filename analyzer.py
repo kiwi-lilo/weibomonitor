@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 
 import requests
@@ -24,6 +25,9 @@ from keywords import (
 )
 
 log = logging.getLogger(__name__)
+
+# DeepSeek 生成摘要可能需要几十秒；可按部署网络情况通过环境变量覆盖。
+LLM_SUMMARY_TIMEOUT = int(os.environ.get("LLM_SUMMARY_TIMEOUT", "60"))
 
 W_STRONG, W_MEDIUM, W_MILD, W_POS = 4, 2, 1, 2
 
@@ -205,55 +209,6 @@ def llm_refine(candidates: list[Weibo], settings: Settings,
                     w.llm_reason = item.get("reason", "")
         except (requests.RequestException, ValueError, KeyError) as e:
             log.warning("LLM 复核批次失败，保留词库结论: %s", e)
-# --- analyzer.py 文件的末尾 ---
-import requests
-import logging
-
-log = logging.getLogger(__name__)
-
-_SUMMARY_DATA_RE = re.compile(
-    r"\d+(?:\.\d+)?(?:余|多)?(?:年|个月|月|日|户|人次|人|名|次|天|层|栋|部|万元|公里|小时)"
-)
-
-_SUMMARY_BOILERPLATE = (
-    "信息来源为",
-    "事件经过为",
-    "争议或疑似原因在于",
-    "造成影响方面",
-    "群众反映及当前进展方面",
-    "相关舆情持续一段时间",
-    "部分网络用户近期围绕",
-    "原文未提及",
-)
-
-
-def _summary_quality_issue(summary: str, source_text: str) -> str:
-    if "\n" in summary or "\r" in summary:
-        return "摘要出现分段"
-    summary = summary.strip()
-    if not summary.startswith("△"):
-        return "摘要未以△开头"
-
-    body = summary.lstrip("△").strip()
-    if len(source_text) >= 120 and len(body) < 160:
-        return "摘要过短，尚未说清事件经过"
-    if len(body) > 300:
-        return "摘要超过300字"
-
-    first_end = re.search(r"[。！？!?]", body)
-    if not first_end or first_end.end() > 60:
-        return "首句没有简短概括事件核心"
-
-    source_facts = set(_SUMMARY_DATA_RE.findall(source_text or ""))
-    missing_facts = [fact for fact in source_facts if fact not in body]
-    if missing_facts:
-        return f"遗漏原帖数据：{'、'.join(sorted(missing_facts))}"
-    if any(marker in body for marker in ("一是", "二是", "首先", "其次")):
-        return "使用了禁止的罗列式连接词"
-    if any(marker in body for marker in _SUMMARY_BOILERPLATE):
-        return "使用了模板化套话，需改为自然叙事"
-    return ""
-
 
 def _clean_summary(content: str) -> str:
     return re.sub(r"\s+", " ", content or "").strip()
@@ -281,51 +236,28 @@ def llm_summarize(top_candidates: list, settings) -> None:
         prompt = (
             "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
             "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是一句简短的话，直接概括“事发时间和具体地点、事件、涉及主体和持续时间”。"
-            "字数与排版格式：在素材信息充足时，生成文本总字数控制在180至260字；素材较短时以事实完整为先，严禁为凑字数编造内容。必须采用纯粹的一段话形式输出，不换行、不加标题、不分点。"
+            "字数与排版格式：生成文本总字数控制在180至260字；采用纯粹的一段话形式输出，不换行、不加标题、不分点。"
             "只使用原文明确提供的信息，不新增事实、不推测动机、不扩大责任主体、不替任何一方下结论。对知情人爆料、未经官方确认的指控，必须保留来源归属，并使用“据报道、据知情人士称、疑似、被指、尚待核实”等谨慎表述，不能将其写成已证实事实。"
             "核心内容与数据：保留事发时间和具体地点、关键数字、道路名称和相关主体；删除重复内容、情绪化表达、夸张修辞、反问、类比、号召性语言和未经证实的定性词。"
-            "内容绝对禁区：不需要阐述事件的影响及群众诉求；绝对不允许在文本中提出任何解决建议或应对措施。使用第三人称、简洁、克制的新闻写法，只输出一个自然段，不加标题、不分点、不作评论。"
+            "内容绝对禁区：不需要阐述事件的影响及群众诉求；绝对不允许在文本中提出任何解决建议或应对措施。使用第三人称、简洁、克制的新闻写法。"
             "结尾说明群众是否曾反映、问题是否已解决；如原文没有权威处置结果，应写明“截至材料所述时间，尚无明确处置结果”。"
             "公文文风语态：保持严肃、紧凑的公文语态，行文要高度凝练，坚决禁止使用如“一是、二是，首先、其次”等罗列型连接词。"
             "结构组织：按“信息来源—事件经过—争议或疑似原因—造成影响—群众反映及当前进展”的顺序组织内容，但不要机械写“信息来源为”等模板化引导语，应自然衔接成文。"
             f"原帖内容：{source_text}"
         )
-        previous_summary = ""
-        quality_issue = ""
-        best_summary = ""
-        for attempt in range(2):
-            messages = [{"role": "user", "content": prompt}]
-            if quality_issue:
-                messages.extend([
-                    {"role": "assistant", "content": previous_summary},
-                    {"role": "user", "content": (
-                        f"上一版不合格：{quality_issue}。请保留全部既定格式和内容禁区，"
-                        "重新阅读原帖，把事件经过、关键细节和数据写完整后重写。"
-                    )},
-                ])
-            try:
-                resp = requests.post(url, headers=headers, timeout=20, json={
-                    "model": model,
-                    "temperature": 0.1,
-                    "messages": messages,
-                })
-                resp.raise_for_status()
-                content = _clean_summary(
-                    resp.json()["choices"][0]["message"]["content"]
-                )
-                if len(content) > len(best_summary):
-                    best_summary = content
-                quality_issue = _summary_quality_issue(content, source_text)
-                if quality_issue:
-                    previous_summary = content
-                    log.warning("LLM 摘要需重写 [%s]: %s", getattr(w, 'id', '未知'), quality_issue)
-                    continue
-                w.summary = content
-                break
-            except Exception as e:
-                log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
-                if attempt == 0:
-                    continue
-        else:
-            # 两次均不合格时保留信息量最大的一版；接口完全失败则保留原文。
-            w.summary = best_summary or source_text
+        try:
+            # 每条只请求一次，完全信任模型输出，不再用本地规则触发重写。
+            resp = requests.post(url, headers=headers, timeout=LLM_SUMMARY_TIMEOUT, json={
+                "model": model,
+                "temperature": 0.1,
+                "messages": [{"role": "user", "content": prompt}],
+            })
+            resp.raise_for_status()
+            content = _clean_summary(
+                resp.json()["choices"][0]["message"]["content"]
+            )
+            w.summary = content or source_text
+        except Exception as e:
+            log.warning("LLM 摘要失败 [%s]: %s", getattr(w, 'id', '未知'), e)
+            # 接口失败时保留原帖，避免摘要失败导致整条候选消失。
+            w.summary = source_text
