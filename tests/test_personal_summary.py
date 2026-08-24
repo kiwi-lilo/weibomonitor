@@ -10,7 +10,7 @@ from config import DEFAULT_LLM_API_BASE, DEFAULT_LLM_MODEL, Settings
 from models import Weibo
 
 
-def test_personal_summary_keeps_format_and_retries_short_output(monkeypatch):
+def test_personal_summary_accepts_single_model_output(monkeypatch):
     source_text = (
         "2026年7月起，汉中某小区2栋共300户居民反映两部电梯频繁停运，"
         "其中一部已连续停运7个月。物业称正在联系维保单位，但截至发帖时仍未恢复，"
@@ -61,24 +61,25 @@ def test_personal_summary_keeps_format_and_retries_short_output(monkeypatch):
     llm_summarize([weibo], settings)
 
     prompt = requests[0]["json"]["messages"][0]["content"]
-    assert len(requests) == 2
+    assert len(requests) == 1
+    assert requests[0]["timeout"] == 60
     assert "文本最开头必须带有“△”符号" in prompt
-    assert "必须采用纯粹的一段话形式输出" in prompt
-    assert "不需要阐述事件的影响及群众诉求" in prompt
+    assert "采用纯粹的一段话形式输出" in prompt
+    assert "第一句话必须是对整条舆情的简短总括" in prompt
+    assert "首句建议控制在25字以内" in prompt
+    assert "原文没有写到的内容直接省略" in prompt
+    assert "不套用固定结尾" in prompt
     assert "绝对不允许在文本中提出任何解决建议" in prompt
     assert "事发时间和具体地点" in prompt
     assert "不要机械写“信息来源为”" in prompt
     assert "转发3次" not in prompt
     assert "发布时间为" not in prompt
     assert f"原帖内容：{source_text}" in prompt
-    assert "上一版不合格" in requests[1]["json"]["messages"][-1]["content"]
     assert weibo.summary.startswith("△")
-    assert "300户" in weibo.summary
-    assert "7个月" in weibo.summary
     assert "\n" not in weibo.summary
 
 
-def test_personal_summary_retries_template_like_output(monkeypatch):
+def test_personal_summary_does_not_locally_rewrite_model_output(monkeypatch):
     source_text = (
         "西安市雁塔区某小区业主反映，楼顶违建多年未整改。近期连续降雨后，"
         "屋面出现严重积水，违建业主锁闭通道，物业无法进场清理。业主称此前多次举报，"
@@ -94,11 +95,10 @@ def test_personal_summary_retries_template_like_output(monkeypatch):
     )
     outputs = iter([
         (
-            "△西安雁塔区某小区楼顶违建多年未整改，屋面积水问题仍待处理。"
-            "信息来源为网络平台原帖。事件经过为业主反映，小区屋面违建长期存续，"
-            "近期连续降雨后出现严重积水，违建业主锁闭通道，物业无法进场清理。"
-            "争议或疑似原因在于此前拆除仅涉及部分设施，屋面防水和排水系统受损，"
-            "群众反映及当前进展方面，相关纠纷至今未彻底解决。"
+            "△西安雁塔区某小区楼顶违建多年未整改，近期降雨后屋面积水且物业清理受阻。"
+            "有业主反映，该小区屋面违建长期存续，连续降雨后出现严重积水，"
+            "违建业主锁闭通道，物业无法进场清理。业主称此前曾多次举报，"
+            "但拆除仅涉及部分设施，屋面防水和排水系统受损。"
         ),
         (
             "△西安雁塔区某小区楼顶违建多年未整改，近期降雨后屋面积水且物业清理受阻。"
@@ -123,12 +123,13 @@ def test_personal_summary_retries_template_like_output(monkeypatch):
     monkeypatch.setattr("analyzer.requests.post", fake_post)
     llm_summarize([weibo], Settings(cookie="cookie", llm_api_key="test-key"))
 
-    assert len(requests) == 2
+    assert len(requests) == 1
     assert requests[0]["model"] == DEFAULT_LLM_MODEL
-    assert "模板化套话" in requests[1]["messages"][-1]["content"]
     assert weibo.summary.startswith("△")
     assert "信息来源为" not in weibo.summary
-    assert "事件经过为" not in weibo.summary
+    assert "争议或疑似原因" not in weibo.summary
+    assert "材料未提及" not in weibo.summary
+    assert "截至材料所述时间，尚无明确处置结果" not in weibo.summary
 
 
 def test_llm_settings_default_to_deepseek(monkeypatch):
