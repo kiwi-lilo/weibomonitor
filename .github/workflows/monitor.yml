@@ -49,11 +49,8 @@ jobs:
             seen-
 
       - name: 单元测试
-        # index.py 属于独立部署的阿里云央媒涉陕版，不在本 GitHub 仓库中。
         run: >-
           pip install pytest && pytest tests/ -q
-          --ignore=tests/test_index_bark.py
-          --ignore=tests/test_index_news_filter.py
 
       - name: 运行舆情监测
         env:
