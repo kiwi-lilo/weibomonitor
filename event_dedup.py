@@ -18,6 +18,10 @@ _TOPIC_TERMS = (
     # signature so those reposts can be collapsed just like local complaints.
     "爆料", "传闻", "谣言", "不实", "狗仔", "私生子", "产子", "天王", "艺人",
     "歌手", "股东", "热搜", "对号入座", "辟谣", "澄清",
+    # 人身伤害类舆情常被不同账号大幅改写，原有民生主题词无法形成共同签名。
+    "男孩", "女孩", "少年", "未成年人", "民警", "公职人员", "工作人员",
+    "殴打", "掌掴", "踢打", "踢踹", "报警", "颅脑损伤", "耳鸣", "拘留",
+    "道歉", "赔偿", "有偿服务", "色情服务", "涉黄",
 )
 
 _NOISE_PHRASES = (
@@ -28,6 +32,11 @@ _NOISE_PHRASES = (
 _DURATION_RE = re.compile(
     r"(?:\d+|一|两|三|四|五|六|七|八|九|十|半)(?:天|日|周|星期|个?月|年|小时)"
 )
+_AGE_RE = re.compile(r"\d{1,3}岁")
+_DATE_RE = re.compile(r"\d{1,2}月\d{1,2}日")
+_CLOCK_RE = re.compile(r"\d{1,2}(?:时|点)(?:\d{1,2}分)?")
+_MASKED_NAME_RE = re.compile(r"[A-Za-z\u4e00-\u9fff]某")
+_HASHTAG_RE = re.compile(r"#([^#\r\n]{4,60})#")
 
 _DISTINCTIVE_EVENT_TERMS = frozenset({
     "爆料", "传闻", "谣言", "不实", "狗仔", "私生子", "产子", "股东",
@@ -73,7 +82,20 @@ def _topics(weibo: Weibo) -> set[str]:
 def _anchors(weibo: Weibo) -> set[str]:
     anchors = set(_DURATION_RE.findall(weibo.text))
     anchors.update(re.findall(r"\d+(?:\.\d+)?(?:元|万|万元|户|人|次|公里|米)", weibo.text))
+    anchors.update(_AGE_RE.findall(weibo.text))
+    anchors.update(_DATE_RE.findall(weibo.text))
+    anchors.update(_CLOCK_RE.findall(weibo.text))
+    anchors.update(_MASKED_NAME_RE.findall(weibo.text))
     return anchors
+
+
+def _hashtags(weibo: Weibo) -> set[str]:
+    """提取具体事件话题；过短话题通常只是城市或投诉类通用标签。"""
+    return {
+        _normalize(value)
+        for value in _HASHTAG_RE.findall(weibo.text)
+        if len(_normalize(value)) >= 8
+    }
 
 
 def _distinctive_trigrams(text: str) -> set[str]:
@@ -94,13 +116,16 @@ def same_event(left: Weibo, right: Weibo) -> bool:
     if left_text == right_text:
         return True
 
+    common_regions = set(left.regions) & set(right.regions)
+    if common_regions and _hashtags(left) & _hashtags(right):
+        return True
+
     shorter, longer = sorted((left_text, right_text), key=len)
     if len(shorter) >= 20 and shorter in longer:
         return True
 
     sequence_ratio = SequenceMatcher(None, left_text, right_text, autojunk=False).ratio()
     trigram_ratio = _jaccard(_ngrams(left_text, 3), _ngrams(right_text, 3))
-    common_regions = set(left.regions) & set(right.regions)
     common_topics = _topics(left) & _topics(right)
     if sequence_ratio >= 0.76:
         return True
@@ -140,6 +165,11 @@ def same_event(left: Weibo, right: Weibo) -> bool:
             and bool(common_non_rumor_topics)
             and shared_bigrams >= 7
         )
+        or (
+            bool(common_anchors)
+            and len(common_topics) >= 3
+            and shared_bigrams >= 3
+        )
         or (bool(common_anchors) and len(common_topics) >= 2 and shared_bigrams >= 5)
     )
 
@@ -147,10 +177,33 @@ def same_event(left: Weibo, right: Weibo) -> bool:
 def deduplicate_event_candidates(
     candidates: list[tuple[str, Weibo]],
 ) -> list[tuple[str, Weibo]]:
-    """保留输入顺序中每个事件的首条；调用前应先按严重度、热度排序。"""
+    """按相似关系的连通分组去重，并保留每组输入顺序最靠前的一条。"""
+    if len(candidates) < 2:
+        return list(candidates)
+
+    parents = list(range(len(candidates)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left_index: int, right_index: int) -> None:
+        left_root, right_root = find(left_index), find(right_index)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    for right_index in range(1, len(candidates)):
+        for left_index in range(right_index):
+            if same_event(candidates[left_index][1], candidates[right_index][1]):
+                union(left_index, right_index)
+
     selected: list[tuple[str, Weibo]] = []
-    for city, candidate in candidates:
-        if any(same_event(candidate, kept) for _, kept in selected):
-            continue
-        selected.append((city, candidate))
+    selected_roots: set[int] = set()
+    for index, candidate in enumerate(candidates):
+        root = find(index)
+        if root not in selected_roots:
+            selected.append(candidate)
+            selected_roots.add(root)
     return selected

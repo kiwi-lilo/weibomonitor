@@ -288,6 +288,7 @@ def build_personal_report_payload(
     new_negative_items: list[tuple[str, Weibo]] | None = None,
 ) -> dict:
     """Build the JSON contract consumed by the shared GitHub Pages dashboard."""
+    has_explicit_new_negative_items = new_negative_items is not None
     if monitored_items is None:
         monitored_items = [
             (section.get("city", "陕西"), weibo)
@@ -342,7 +343,11 @@ def build_personal_report_payload(
         "updated_at": datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
         "period": period,
         "stats": {
-            "new_neg": sum(section.get("new_neg", 0) for section in sections),
+            "new_neg": (
+                len(new_negative_items)
+                if has_explicit_new_negative_items
+                else sum(section.get("new_neg", 0) for section in sections)
+            ),
             "total_posts": sum(section.get("total", 0) for section in sections),
             "healthy": sum(bool(section.get("health_ok", True)) for section in sections),
             "city_count": len(sections),

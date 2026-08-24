@@ -26,7 +26,7 @@ from models import Weibo
 from fetcher import build_session, search_mobile, search_general, Health, Status
 from analyzer import is_entertainment_news, is_official, analyze, llm_refine, model_refine
 from state import load_seen, save_seen
-from event_dedup import deduplicate_event_candidates
+from event_dedup import deduplicate_event_candidates, same_event
 from reporter import (
     build_alert_html,
     build_city_section,
@@ -246,6 +246,24 @@ def run(settings: Settings) -> None:
                  len(all_new_neg), len(unique_events))
     top10_items = unique_events[:10]
     top10 = [weibo for _, weibo in top10_items]
+
+    # 面向用户的“其他新增”和“新增负面”同样按事件展示；原始监测帖子及附件仍完整保留。
+    unique_new_items = deduplicate_event_candidates(all_new_items)
+    other_new_items = [
+        item for item in unique_new_items
+        if not any(same_event(item[1], recommended) for _, recommended in top10_items)
+    ]
+    unique_by_city: dict[str, list[Weibo]] = {}
+    for city, weibo in unique_events:
+        unique_by_city.setdefault(city, []).append(weibo)
+    report_sections = []
+    for section in sections:
+        report_section = dict(section)
+        city_events = unique_by_city.get(section.get("city", "陕西"), [])
+        report_section["new_neg"] = len(city_events)
+        report_section["new_negatives"] = city_events
+        report_section["new_negatives_list"] = city_events
+        report_sections.append(report_section)
     
     leader_text = ""
     if top10:
@@ -258,8 +276,8 @@ def run(settings: Settings) -> None:
         print("\n" + "═" * 60)
         
     month_day = now.strftime("%m-%d")
-    total_new = sum(section.get("new_neg", 0) for section in sections)
-    any_unhealthy = any(not section.get("health_ok", True) for section in sections)
+    total_new = len(unique_events)
+    any_unhealthy = any(not section.get("health_ok", True) for section in report_sections)
     if total_new:
         subject = f"🔴 陕西舆情日报 {month_day} | 新增负面合计 {total_new} 条"
     elif any_unhealthy:
@@ -267,24 +285,24 @@ def run(settings: Settings) -> None:
     else:
         subject = f"✅ 陕西舆情日报 {month_day} | 各市均无新增负面"
 
-    html = build_digest_html(sections, period, leader_text=leader_text)
+    html = build_digest_html(report_sections, period, leader_text=leader_text)
     save_personal_report_json(
         build_personal_report_payload(
-            sections,
+            report_sections,
             period,
             top10_items,
-            all_new_items[:100],
+            other_new_items[:100],
             monitored_items=all_items,
-            new_negative_items=all_new_neg,
+            new_negative_items=unique_events,
         )
     )
-    web_html = build_web_report_html(sections, period, top10_items)
+    web_html = build_web_report_html(report_sections, period, top10_items)
     save_web_report(web_html)
     send_email(settings, subject, html, attachments=all_files)
-    for message in build_digest_messages(sections, period, top10_items, settings.run_url):
+    for message in build_digest_messages(report_sections, period, top10_items, settings.run_url):
         send_bark(settings, message)
     for message in build_wecom_digest_messages(
-        sections,
+        report_sections,
         period,
         top10_items,
         settings.run_url,
