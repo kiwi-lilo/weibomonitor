@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from analyzer import llm_summarize
+from analyzer import _clean_summary, llm_summarize
 from config import DEFAULT_LLM_API_BASE, DEFAULT_LLM_MODEL, Settings
 from models import Weibo
 
@@ -69,6 +69,7 @@ def test_personal_summary_accepts_single_model_output(monkeypatch):
     assert "首句建议控制在25字以内" in prompt
     assert "原文没有写到的内容直接省略" in prompt
     assert "不套用固定结尾" in prompt
+    assert "尚待核实" not in prompt
     assert "绝对不允许在文本中提出任何解决建议" in prompt
     assert "事发时间和具体地点" in prompt
     assert "不要机械写“信息来源为”" in prompt
@@ -141,3 +142,17 @@ def test_llm_settings_default_to_deepseek(monkeypatch):
     assert settings.llm_api_base == DEFAULT_LLM_API_BASE
     assert settings.llm_model == DEFAULT_LLM_MODEL
     assert settings.llm_ready
+
+
+def test_summary_removes_verification_disclaimer_templates():
+    assert _clean_summary("△榆林游客反映深夜噪音扰民。前述情况尚待核实。") == (
+        "△榆林游客反映深夜噪音扰民。"
+    )
+    assert _clean_summary(
+        "△定边13岁少年被指遭公职人员殴打。"
+        "截至当前，上述网络帖文内容尚未获得有关官方证实，相关情况尚待官方进一步核实。"
+    ) == "△定边13岁少年被指遭公职人员殴打。"
+    assert _clean_summary(
+        "△定边一男孩被指遭民警掌掴。涉事二人被处以行政拘留十日，"
+        "有关说法尚未获官方证实，仍有待进一步核实。"
+    ) == "△定边一男孩被指遭民警掌掴。涉事二人被处以行政拘留十日。"

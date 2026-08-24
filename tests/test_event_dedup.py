@@ -92,3 +92,54 @@ def test_different_rumors_are_not_merged_without_a_shared_entity():
     )
 
     assert not same_event(divorce, tax)
+
+
+def test_todays_rewrites_of_dingbian_assault_are_one_event():
+    posts = [
+        _weibo(
+            "dingbian-1",
+            "#男孩被民警掌掴近1个月未能正常上学#陕西定边县13岁少年被公职人员殴打致颅脑损伤，涉事人员被处十日处罚",
+            ["殴打"],
+            heat=569,
+        ),
+        _weibo(
+            "dingbian-2",
+            "#13岁男孩被民警掌掴致伤不敢出门#陕西定边县13岁男孩夜间回家，被公职人员无故殴打，民警郭某掌掴男孩，造成闭合性轻型颅脑损伤、耳鸣",
+            ["殴打"],
+            heat=23,
+        ),
+        _weibo(
+            "dingbian-3",
+            "#男孩被民警掌掴近1个月未能正常上学#陕西定边13岁男孩回家途中被公积金工作人员刘某踢打，报警时又被民警郭某掌掴",
+            ["殴打"],
+            heat=16,
+        ),
+        _weibo(
+            "dingbian-4",
+            "13岁男孩被民警掌掴致颅脑损伤，拘留10天就完事了？道歉和赔偿不能少",
+            ["殴打"],
+            heat=1,
+        ),
+    ]
+    for post in posts:
+        post.regions = ["定边县"]
+
+    result = deduplicate_event_candidates([("榆林", post) for post in posts])
+
+    assert result == [("榆林", posts[0])]
+
+
+def test_different_assaults_in_one_county_are_not_merged():
+    april = _weibo(
+        "assault-april",
+        "定边县4月25日一名13岁男孩被民警郭某掌掴，造成颅脑损伤和耳鸣",
+        ["殴打"],
+    )
+    july = _weibo(
+        "assault-july",
+        "定边县7月12日一名16岁女孩在校外被工作人员殴打，手臂骨折",
+        ["殴打"],
+    )
+    april.regions = july.regions = ["定边县"]
+
+    assert not same_event(april, july)
