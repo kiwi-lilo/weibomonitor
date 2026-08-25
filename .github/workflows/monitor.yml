@@ -71,6 +71,8 @@ jobs:
           LLM_API_BASE: https://api.deepseek.com
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: deepseek-v4-flash
+          # 仅有配图的微博切换到视觉模型；无图继续使用上方文本模型。
+          LLM_VISION_MODEL: deepseek-v4-flash-vision-exp
         run: python main.py
 
       - name: 发布 personal.json 到联合报告仓库
