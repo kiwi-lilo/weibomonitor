@@ -31,6 +31,7 @@ class Weibo:
     llm_reason: str = ""            # LLM 复核理由（启用时）
     model_score: float | None = None  # 本地模型负面概率（启用时）
     regions: list[str] = field(default_factory=list)
+    image_urls: list[str] = field(default_factory=list)
     is_new: bool = True             # 相对历史 seen 是否新增
 
     @property

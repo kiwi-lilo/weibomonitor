@@ -102,6 +102,46 @@ def _to_int(v) -> int:
     return 0
 
 
+def _normalize_image_url(value: object) -> str:
+    url = str(value or "").strip()
+    if url.startswith("//"):
+        return "https:" + url
+    return url if url.startswith(("https://", "http://")) else ""
+
+
+def _image_urls(raw: dict) -> list[str]:
+    """兼容移动端 pics 与 PC 端 pic_infos，优先保留大图地址。"""
+    urls: list[str] = []
+    for pic in raw.get("pics") or []:
+        if not isinstance(pic, dict):
+            continue
+        large = pic.get("large") if isinstance(pic.get("large"), dict) else {}
+        url = _normalize_image_url(large.get("url") or pic.get("url"))
+        if url and url not in urls:
+            urls.append(url)
+
+    pic_infos = raw.get("pic_infos") or {}
+    if isinstance(pic_infos, dict):
+        pic_ids = raw.get("pic_ids") or list(pic_infos)
+        for pic_id in pic_ids:
+            info = pic_infos.get(str(pic_id)) or {}
+            if not isinstance(info, dict):
+                continue
+            largest = info.get("largest") if isinstance(info.get("largest"), dict) else {}
+            large = info.get("large") if isinstance(info.get("large"), dict) else {}
+            url = _normalize_image_url(
+                largest.get("url") or large.get("url") or info.get("url")
+            )
+            if url and url not in urls:
+                urls.append(url)
+    retweeted = raw.get("retweeted_status")
+    if isinstance(retweeted, dict):
+        for url in _image_urls(retweeted):
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
 def _build(raw: dict, text: str, keyword: str, url_tpl: str) -> Weibo | None:
     text = clean_text(text)
     if len(text) < 6:
@@ -127,6 +167,7 @@ def _build(raw: dict, text: str, keyword: str, url_tpl: str) -> Weibo | None:
         likes=_to_int(raw.get("attitudes_count", 0)),
         keyword=keyword,
         url=url_tpl.format(wid),
+        image_urls=_image_urls(raw),
     )
 
 

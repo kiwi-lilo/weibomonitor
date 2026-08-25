@@ -82,6 +82,9 @@ class Settings:
             os.environ.get("LLM_MODEL") or DEFAULT_LLM_MODEL
         ).strip()
     )
+    llm_vision_model: str = field(
+        default_factory=lambda: os.environ.get("LLM_VISION_MODEL", "").strip()
+    )
 
     @property
     def bark_ready(self) -> bool:

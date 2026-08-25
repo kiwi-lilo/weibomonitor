@@ -212,6 +212,11 @@ def llm_refine(candidates: list[Weibo], settings: Settings,
 
 _SUMMARY_DISCLAIMER_PATTERNS = (
     re.compile(
+        r"(?:目前|截至(?:发帖时|当前|目前))[，,]?"
+        r"(?:相关|有关)(?:方面|部门|单位)?(?:尚未|未)"
+        r"(?:作出|公开)?(?:回应|答复)"
+    ),
+    re.compile(
         r"(?:截至(?:当前|目前|材料所述时间)[，,]?)?"
         r"(?:前述|上述|有关|相关)?(?:网络帖文|网帖|帖文)?(?:情况|内容|说法)"
         r"(?:尚未|未)(?:获得|获)?(?:有关)?官方(?:证实|确认)"
@@ -260,25 +265,69 @@ def llm_summarize(top_candidates: list, settings) -> None:
              len(top_candidates), model, base_url)
     for w in top_candidates:
         source_text = w.text.strip()[:8000]
-        prompt = (
-            "请作为专业政务舆情分析员，根据我提供的素材，撰写一篇高质量的舆情信息报送文本。请严格执行以下所有指令："
-            "符号与首句概括：文本最开头必须带有“△”符号，且紧跟其后的第一句话必须是对整条舆情的简短总括，直接写出核心对象、核心问题或变化；首句建议控制在25字以内，已知的时间、地点、涉及主体和持续时间可放到后文自然交代，不要把首句写成机械的信息清单。首句可参考“△西安物业收费‘一费制’推行五年落地遇阻。”这种‘对象或事件＋核心状态’的概括方式。"
-            "字数与排版格式：生成文本总字数控制在180至260字；采用纯粹的一段话形式输出，不换行、不加标题、不分点。"
-            "只使用原文明确提供的信息，不新增事实、不推测动机、不扩大责任主体、不替任何一方下结论。对知情人爆料或单方指控，只需在首次出现时用“据网民反映”“网帖称”“被指”等来源归属体现审慎，不能将其写成已证实事实；结尾不得追加真实性核验、等待官方确认等免责声明。"
-            "核心内容与数据：保留事发时间和具体地点、关键数字、道路名称和相关主体；删除重复内容、情绪化表达、夸张修辞、反问、类比、号召性语言和未经证实的定性词。"
-            "内容取舍：从第二句开始再把原文中的信息来源、事件经过、明确的反映或进展自然说清楚；原文明确写到的影响、群众诉求或处置结果可以简要保留。原文没有写到的内容直接省略，不做缺失信息说明，不套用固定结尾。"
-            "表达方式：不要另列或明说分析栏目，不要为了凑结构强行解释事件或补充原因；只把素材中已有的事实按自然的新闻叙述顺序串起来。绝对不允许在文本中提出任何解决建议或应对措施。使用第三人称、简洁、克制的新闻写法。"
-            "公文文风语态：保持严肃、紧凑的公文语态，行文要高度凝练，坚决禁止使用如“一是、二是，首先、其次”等罗列型连接词。"
-            "结构组织：第一句只负责概括整条舆情，后文负责把事件说清楚；信息来源、时间地点、主体、事实经过和明确进展按原文自然衔接，不要机械写“信息来源为”等模板化引导语。"
-            f"原帖内容：{source_text}"
-        )
+        image_urls = list(dict.fromkeys(getattr(w, "image_urls", []) or []))[:6]
+        prompt = f"""你是资深政务舆情信息编辑。请把下面一条网络舆情编辑成可直接报送的高质量摘要。任务不是机械复述微博，也不是评判真假或补齐报告要素，而是提炼最值得上报的问题，并用具体事实把事情说清楚。
+
+编辑方法：
+1. 先判断素材的核心上报价值。政策类突出执行落差；公共服务类突出故障、持续时间和影响范围；行政履职类突出群众反映经过与处置问题；消费投诉类突出交易事实、金额和争议点；安全事件类突出行为、后果和已有处置；网络指控类突出指控主体、具体行为和原文证据。不要在成文中写出这些分类名称。
+2. 文本必须以“△”开头。第一句用“地区或核心对象＋具体问题＋关键影响或状态”概括整条舆情，通常控制在20至45字。首句必须有实质判断，不得只写“存在问题”“引发关注”“引发质疑”“引发争议”“相关问题待解决”等空泛结论。
+3. 从第二句开始自然交代信息来源和事件经过。优先保留原文中的具体地点、单位、人物、时间、持续时长、金额、数量、专有名词、图片文字说明、现场细节和其他能够支撑首句的证据；不要用一串被@的账号代替事件事实。
+4. 原文明确写到的实际影响、群众诉求、整改建议、回应或处置进展，应根据重要性保留。原文提出的建议可以转述，但不得自行新增建议、原因、责任认定或影响。
+5. 对单方投诉或网络爆料，只在首次出现时用“网民反映”“网帖称”“被指”等方式标明来源。不得在结尾追加真实性核验、等待官方确认、材料未提及或相关方面未回应等免责声明；只有原文明示曾联系某单位但未获回应，且这本身属于事件经过时，才可客观写入。
+6. 原文没有的信息直接省略，不为凑齐原因、影响、诉求、回应等结构而补写。多项原因或问题确有事实支撑时，可以自然使用“一是、二是”等简明归纳，但不得机械罗列。
+
+写作要求：
+- 只依据原帖正文和随附图片，不新增事实，不推测动机，不扩大责任主体，不替任何一方下结论。有图片时应认真读取其中可辨识的文字、标识、场景和证据，并把能够支撑核心问题的具体信息写入摘要；看不清或无法确定的内容不得猜测。
+- 删除情绪宣泄、夸张修辞、反问、口号、重复表述和无信息量套话，但不得删除能够说明问题的具体事实。
+- 通常写180至260字；信息丰富时可适当延长。
+- 使用第三人称、简洁克制的新闻写法，写成一个自然段，不换行、不加标题、不分点，不输出解释。
+
+原帖内容：{source_text}"""
+        vision_model = getattr(settings, "llm_vision_model", "").strip()
+        use_vision = bool(image_urls and vision_model)
+        request_model = vision_model if use_vision else model
+        message_content: str | list[dict] = prompt
+        if use_vision:
+            message_content = [{"type": "text", "text": prompt}]
+            message_content.extend(
+                {"type": "image_url", "image_url": {"url": image_url}}
+                for image_url in image_urls
+            )
         try:
-            # 每条只请求一次，完全信任模型输出，不再用本地规则触发重写。
-            resp = requests.post(url, headers=headers, timeout=LLM_SUMMARY_TIMEOUT, json={
-                "model": model,
+            # 正常只请求一次；视觉接口拒绝图片时再降级为文本模型。
+            payload = {
+                "model": request_model,
                 "temperature": 0.1,
-                "messages": [{"role": "user", "content": prompt}],
-            })
+                "messages": [{"role": "user", "content": message_content}],
+            }
+            try:
+                resp = requests.post(
+                    url, headers=headers, timeout=LLM_SUMMARY_TIMEOUT, json=payload
+                )
+            except requests.RequestException as exc:
+                if not use_vision:
+                    raise
+                log.warning(
+                    "视觉摘要请求异常，降级为文本模型 [%s]: %s",
+                    getattr(w, "id", "未知"),
+                    exc,
+                )
+                payload["model"] = model
+                payload["messages"] = [{"role": "user", "content": prompt}]
+                resp = requests.post(
+                    url, headers=headers, timeout=LLM_SUMMARY_TIMEOUT, json=payload
+                )
+            if use_vision and not resp.ok:
+                log.warning(
+                    "视觉摘要失败，降级为文本模型 [%s]: HTTP %s",
+                    getattr(w, "id", "未知"),
+                    resp.status_code,
+                )
+                payload["model"] = model
+                payload["messages"] = [{"role": "user", "content": prompt}]
+                resp = requests.post(
+                    url, headers=headers, timeout=LLM_SUMMARY_TIMEOUT, json=payload
+                )
             resp.raise_for_status()
             content = _clean_summary(
                 resp.json()["choices"][0]["message"]["content"]
