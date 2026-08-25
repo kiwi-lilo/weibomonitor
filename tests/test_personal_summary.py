@@ -63,16 +63,17 @@ def test_personal_summary_accepts_single_model_output(monkeypatch):
     prompt = requests[0]["json"]["messages"][0]["content"]
     assert len(requests) == 1
     assert requests[0]["timeout"] == 60
-    assert "文本最开头必须带有“△”符号" in prompt
-    assert "采用纯粹的一段话形式输出" in prompt
-    assert "第一句话必须是对整条舆情的简短总括" in prompt
-    assert "首句建议控制在25字以内" in prompt
-    assert "原文没有写到的内容直接省略" in prompt
-    assert "不套用固定结尾" in prompt
+    assert "文本必须以“△”开头" in prompt
+    assert "政策类突出执行落差" in prompt
+    assert "地区或核心对象＋具体问题＋关键影响或状态" in prompt
+    assert "通常控制在20至45字" in prompt
+    assert "不得只写“存在问题”“引发关注”“引发质疑”" in prompt
+    assert "专有名词、图片文字说明、现场细节" in prompt
+    assert "原文提出的建议可以转述" in prompt
+    assert "原文没有的信息直接省略" in prompt
+    assert "通常写180至260字；信息丰富时可适当延长" in prompt
     assert "尚待核实" not in prompt
-    assert "绝对不允许在文本中提出任何解决建议" in prompt
-    assert "事发时间和具体地点" in prompt
-    assert "不要机械写“信息来源为”" in prompt
+    assert "绝对不允许在文本中提出任何解决建议" not in prompt
     assert "转发3次" not in prompt
     assert "发布时间为" not in prompt
     assert f"原帖内容：{source_text}" in prompt
@@ -145,6 +146,9 @@ def test_llm_settings_default_to_deepseek(monkeypatch):
 
 
 def test_summary_removes_verification_disclaimer_templates():
+    assert _clean_summary(
+        "△西安地铁5号线站名翻译问题引发质疑。目前，相关方面尚未公开回应。"
+    ) == "△西安地铁5号线站名翻译问题引发质疑。"
     assert _clean_summary("△榆林游客反映深夜噪音扰民。前述情况尚待核实。") == (
         "△榆林游客反映深夜噪音扰民。"
     )
@@ -156,3 +160,94 @@ def test_summary_removes_verification_disclaimer_templates():
         "△定边一男孩被指遭民警掌掴。涉事二人被处以行政拘留十日，"
         "有关说法尚未获官方证实，仍有待进一步核实。"
     ) == "△定边一男孩被指遭民警掌掴。涉事二人被处以行政拘留十日。"
+
+
+def test_personal_summary_sends_weibo_images_to_vision_model(monkeypatch):
+    weibo = Weibo(
+        id="summary-with-images",
+        user="地铁观察",
+        text="西安地铁5号线多个站名翻译不当，具体情况见配图。",
+        time="2026-08-25 09:00",
+        url="https://weibo.com/summary-with-images",
+        keyword="地铁",
+        image_urls=["https://img.example.com/one.jpg", "https://img.example.com/two.jpg"],
+    )
+    requests = []
+
+    class Response:
+        ok = True
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "△西安地铁5号线部分站名翻译不规范。配图显示多个站名仅使用拼音。"}}]}
+
+    def fake_post(url, *, headers, timeout, json):
+        requests.append(json)
+        return Response()
+
+    monkeypatch.setattr("analyzer.requests.post", fake_post)
+    llm_summarize(
+        [weibo],
+        Settings(
+            cookie="cookie",
+            llm_api_key="test-key",
+            llm_model="text-model",
+            llm_vision_model="vision-model",
+        ),
+    )
+
+    assert len(requests) == 1
+    assert requests[0]["model"] == "vision-model"
+    content = requests[0]["messages"][0]["content"]
+    assert content[0]["type"] == "text"
+    assert "随附图片" in content[0]["text"]
+    assert [part["image_url"]["url"] for part in content[1:]] == weibo.image_urls
+
+
+def test_personal_summary_falls_back_when_vision_model_rejects_images(monkeypatch):
+    weibo = Weibo(
+        id="vision-fallback",
+        user="普通用户",
+        text="某公共设施存在问题，详细情况见图片说明。",
+        time="2026-08-25 09:00",
+        url="https://weibo.com/vision-fallback",
+        keyword="设施",
+        image_urls=["https://img.example.com/evidence.jpg"],
+    )
+    requests = []
+
+    class Response:
+        status_code = 400
+
+        def __init__(self, ok):
+            self.ok = ok
+            if ok:
+                self.status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "△某公共设施被反映存在问题。网民通过图片说明有关情况。"}}]}
+
+    def fake_post(url, *, headers, timeout, json):
+        requests.append(json.copy())
+        return Response(ok=len(requests) > 1)
+
+    monkeypatch.setattr("analyzer.requests.post", fake_post)
+    llm_summarize(
+        [weibo],
+        Settings(
+            cookie="cookie",
+            llm_api_key="test-key",
+            llm_model="text-model",
+            llm_vision_model="vision-model",
+        ),
+    )
+
+    assert [request["model"] for request in requests] == ["vision-model", "text-model"]
+    assert isinstance(requests[0]["messages"][0]["content"], list)
+    assert isinstance(requests[1]["messages"][0]["content"], str)
