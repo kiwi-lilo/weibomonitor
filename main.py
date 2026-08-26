@@ -24,7 +24,14 @@ from cities import City, CITIES
 from keywords import build_queries
 from models import Weibo
 from fetcher import build_session, search_mobile, search_general, Health, Status
-from analyzer import is_entertainment_news, is_official, analyze, llm_refine, model_refine
+from analyzer import (
+    is_entertainment_news,
+    is_government_relevant,
+    is_official,
+    analyze,
+    llm_refine,
+    model_refine,
+)
 from state import load_seen, save_seen
 from event_dedup import deduplicate_event_candidates, same_event
 from reporter import (
@@ -93,6 +100,12 @@ class CityMonitor:
 
         official, reason = is_official(w)
         if official:
+            self.filtered.append({"user": w.user, "reason": reason,
+                                  "text": w.text[:120], "url": w.url})
+            return False
+
+        relevant, reason = is_government_relevant(w)
+        if not relevant:
             self.filtered.append({"user": w.user, "reason": reason,
                                   "text": w.text[:120], "url": w.url})
             return False
