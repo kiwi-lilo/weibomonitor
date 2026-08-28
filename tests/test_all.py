@@ -98,6 +98,28 @@ def test_blue_v_filtered():
     assert is_official(w)[0]
 
 
+def test_personal_yellow_v_is_kept():
+    w = _w(
+        "西安某小区物业乱收费，居民投诉多次仍未解决",
+        user="热心记者小张",
+        verified=True,
+        verified_type=0,
+        verified_reason="新闻记者",
+    )
+    assert not is_official(w)[0]
+
+
+def test_explicit_official_yellow_v_is_filtered():
+    w = _w(
+        "正常内容正常内容",
+        user="西安日报",
+        verified=True,
+        verified_type=0,
+        verified_reason="官方账号",
+    )
+    assert is_official(w)[0]
+
+
 def test_strong_name_filtered():
     w = _w("正常内容正常内容", user="汉中日报")
     assert is_official(w)[0]
@@ -118,6 +140,15 @@ def test_single_phrase_not_filtered():
 def test_two_phrases_filtered():
     w = _w("我市召开专题会议，会议强调要贯彻落实相关精神", user="热心网友", verified=False)
     assert is_official(w)[0]
+
+
+def test_city_focus_queries_add_high_signal_terms_without_district_expansion():
+    from keywords import build_queries, CITY_FOCUS_KW, SEARCH_NEGATIVE_KW
+
+    queries = build_queries(["西安", "新城"])
+    assert ("西安", "西安 物业费") in queries
+    assert ("西安", "西安 拖欠工资") in queries
+    assert len(queries) == 2 * len(SEARCH_NEGATIVE_KW) + len(CITY_FOCUS_KW)
 
 
 # ── 内容范围过滤 ──
