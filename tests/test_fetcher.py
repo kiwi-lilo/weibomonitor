@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from fetcher import Status, search_mobile
+from fetcher import Status, hydrate_long_weibo, search_mobile
 
 
 class _Response:
@@ -47,7 +47,7 @@ def _mblog() -> dict:
     }
 
 
-def test_search_mobile_hydrates_long_text_before_parsing():
+def test_search_mobile_defers_long_text_hydration_until_requested():
     search_payload = {"ok": 1, "data": {"cards": [{"card_type": 9, "mblog": _mblog()}]}}
     detail_payload = {
         "id": "long-1",
@@ -63,13 +63,20 @@ def test_search_mobile_hydrates_long_text_before_parsing():
 
     assert result.status is Status.OK
     assert len(result.items) == 1
+    assert result.items[0].needs_full_text
+    assert not result.items[0].full_text_loaded
+    assert "135人" not in result.items[0].text
+    assert "220万元" not in result.items[0].text
+    assert session.calls.count("https://m.weibo.cn/api/statuses/show") == 0
+
+    assert hydrate_long_weibo(session, result.items[0])
     assert "135人" in result.items[0].text
     assert "220万元" in result.items[0].text
     assert result.items[0].image_urls == ["https://img.example.com/evidence.jpg"]
     assert session.calls.count("https://m.weibo.cn/api/statuses/show") == 1
 
 
-def test_search_mobile_caches_detail_lookup_for_duplicate_long_posts():
+def test_deferred_hydration_caches_detail_lookup_for_duplicate_long_posts():
     raw = _mblog()
     search_payload = {
         "ok": 1,
@@ -90,4 +97,7 @@ def test_search_mobile_caches_detail_lookup_for_duplicate_long_posts():
 
     assert result.status is Status.OK
     assert len(result.items) == 2
+    assert session.calls.count("https://m.weibo.cn/api/statuses/show") == 0
+    assert hydrate_long_weibo(session, result.items[0])
+    assert hydrate_long_weibo(session, result.items[1])
     assert session.calls.count("https://m.weibo.cn/api/statuses/show") == 1
