@@ -16,6 +16,7 @@ import logging
 import random
 import sys
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from hashlib import md5
 
@@ -177,6 +178,11 @@ class CityMonitor:
 
         err = self.health.counts[Status.ERROR] + self.health.counts[Status.BLOCKED]
         health_ok = err / max(self.health.total, 1) < 0.2 and self.health.auth_failures == 0
+
+        if self.filtered:
+            reason_counts = Counter(item["reason"] for item in self.filtered)
+            detail = "、".join(f"{reason}:{count}" for reason, count in reason_counts.most_common())
+            log.info("[%s] 过滤统计: %s", self.city.short, detail)
 
         print_report(self.results, new_negatives, len(self.filtered),
                      f"[{self.city.short}] " + self.health.summary())
