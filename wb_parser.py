@@ -180,7 +180,15 @@ def parse_mblog(mb: dict, keyword: str) -> Weibo | None:
         lt = mb.get("longText") or {}
         if isinstance(lt, dict) and lt.get("longTextContent"):
             text = lt["longTextContent"]
-    return _build(mb, text, keyword, "https://m.weibo.cn/detail/{}")
+    weibo = _build(mb, text, keyword, "https://m.weibo.cn/detail/{}")
+    if weibo:
+        long_text = mb.get("longText") or {}
+        has_full_text = isinstance(long_text, dict) and bool(
+            long_text.get("longTextContent")
+        )
+        weibo.needs_full_text = bool(mb.get("isLongText")) and not has_full_text
+        weibo.full_text_loaded = has_full_text
+    return weibo
 
 
 def parse_status(st: dict, keyword: str) -> Weibo | None:

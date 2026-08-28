@@ -107,24 +107,18 @@ def _detail_payload(data: object) -> dict | None:
     return data
 
 
-def _hydrate_long_mblog(session: requests.Session, mb: dict,
-                        headers: dict[str, str]) -> dict:
+def hydrate_long_weibo(session: requests.Session, weibo: Weibo) -> bool:
     """Replace a search-card excerpt with the status detail's full text.
 
-    The mobile search API marks long posts with ``isLongText`` but often only
-    returns the excerpt and a "全文" link.  The detail endpoint carries the
-    actual ``longText.longTextContent`` and may also contain richer image
-    metadata, so use it before parsing the Weibo object.
+    The search pass deliberately skips the status detail API.  Full text is
+    loaded only after a long post reaches the report candidate pool.
     """
-    if not mb or not mb.get("isLongText"):
-        return mb
-    long_text = mb.get("longText")
-    if isinstance(long_text, dict) and long_text.get("longTextContent"):
-        return mb
+    if not weibo.needs_full_text or weibo.full_text_loaded:
+        return False
 
-    wid = str(mb.get("id") or mb.get("mid") or "").strip()
+    wid = weibo.id.strip()
     if not wid:
-        return mb
+        return False
 
     cache = getattr(session, "_weibo_detail_cache", None)
     if cache is None:
@@ -133,8 +127,13 @@ def _hydrate_long_mblog(session: requests.Session, mb: dict,
     if wid in cache:
         detail = cache[wid]
     else:
-        detail_headers = dict(headers)
-        detail_headers["Referer"] = f"https://m.weibo.cn/detail/{wid}"
+        detail_headers = {
+            "User-Agent": ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5) "
+                           "AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1"),
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://m.weibo.cn/detail/{wid}",
+        }
         try:
             response = session.get(
                 "https://m.weibo.cn/api/statuses/show",
@@ -154,25 +153,27 @@ def _hydrate_long_mblog(session: requests.Session, mb: dict,
         cache[wid] = detail
 
     if not detail:
-        return mb
+        return False
 
     full = detail.get("longText")
     full_text = full.get("longTextContent") if isinstance(full, dict) else ""
     full_text = full_text or detail.get("text")
     if not isinstance(full_text, str) or not clean_text(full_text):
-        return mb
+        return False
 
-    hydrated = dict(mb)
-    hydrated["text"] = full_text
-    hydrated["longText"] = {"longTextContent": full_text}
-    # Search cards normally include pics, but detail data is a useful fallback
-    # when the search response omits them.
-    for key in ("pics", "pic_infos", "pic_ids", "pic_num", "original_pic", "bmiddle_pic"):
-        if detail.get(key):
-            hydrated[key] = detail[key]
+    original_length = len(clean_text(weibo.text))
+    weibo.text = clean_text(full_text)
+    weibo.needs_full_text = False
+    weibo.full_text_loaded = True
+    # Detail data is a fallback for image metadata omitted from a search card.
+    detail_weibo = parse_mblog(detail, weibo.keyword)
+    if detail_weibo:
+        for image_url in detail_weibo.image_urls:
+            if image_url not in weibo.image_urls:
+                weibo.image_urls.append(image_url)
     log.info("已补取长微博全文 [%s]: %d→%d字",
-             wid, len(clean_text(mb.get("text", ""))), len(clean_text(full_text)))
-    return hydrated
+             wid, original_length, len(weibo.text))
+    return True
 
 
 def search_mobile(session: requests.Session, keyword: str, page: int) -> FetchResult:
@@ -203,7 +204,7 @@ def search_mobile(session: requests.Session, keyword: str, page: int) -> FetchRe
         items: list[Weibo] = []
         for card in data.get("data", {}).get("cards", []):
             for mb in _extract_mblogs(card):
-                w = parse_mblog(_hydrate_long_mblog(session, mb, headers), keyword)
+                w = parse_mblog(mb, keyword)
                 if w:
                     items.append(w)
         return FetchResult(Status.OK if items else Status.EMPTY, items)
@@ -240,10 +241,7 @@ def search_general(session: requests.Session, keyword: str, page: int) -> FetchR
             items: list[Weibo] = []
             for card in data.get("data", {}).get("cards", []):
                 if card.get("card_type") == 9 and card.get("mblog"):
-                    w = parse_mblog(
-                        _hydrate_long_mblog(session, card["mblog"], headers),
-                        keyword,
-                    )
+                    w = parse_mblog(card["mblog"], keyword)
                     if w:
                         items.append(w)
             if items:

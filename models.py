@@ -33,6 +33,10 @@ class Weibo:
     regions: list[str] = field(default_factory=list)
     image_urls: list[str] = field(default_factory=list)
     is_new: bool = True             # 相对历史 seen 是否新增
+    # Detail loading is deferred until the post reaches the report candidate pool.
+    needs_full_text: bool = False
+    full_text_loaded: bool = False
+    summary: str = ""
 
     @property
     def heat(self) -> int:

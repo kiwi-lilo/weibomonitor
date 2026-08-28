@@ -19,11 +19,11 @@ import time
 from datetime import datetime, timedelta
 from hashlib import md5
 
-from config import Settings, TZ, MAX_PAGES, DAYS_BACK
+from config import Settings, TZ, MAX_PAGES, DAYS_BACK, LONG_TEXT_HYDRATE_LIMIT
 from cities import City, CITIES
 from keywords import build_queries
 from models import Weibo
-from fetcher import build_session, search_mobile, search_general, Health, Status
+from fetcher import build_session, hydrate_long_weibo, search_mobile, search_general, Health, Status
 from analyzer import (
     is_entertainment_news,
     is_government_relevant,
@@ -257,6 +257,16 @@ def run(settings: Settings) -> None:
     if len(unique_events) != len(all_new_neg):
         log.info("推荐候选事件去重：%d 条微博 → %d 个独立事件",
                  len(all_new_neg), len(unique_events))
+    # Search cards are used for the broad scan. Hydrate only the leading
+    # candidates that may be sent to the LLM, keeping detail requests bounded.
+    hydrate_items = unique_events[:LONG_TEXT_HYDRATE_LIMIT]
+    hydrate_count = 0
+    for _, weibo in hydrate_items:
+        if weibo.needs_full_text and hydrate_long_weibo(session, weibo):
+            hydrate_count += 1
+    if hydrate_items:
+        log.info("候选长微博补全: %d/%d 条", hydrate_count, len(hydrate_items))
+
     top10_items = unique_events[:10]
     top10 = [weibo for _, weibo in top10_items]
 
