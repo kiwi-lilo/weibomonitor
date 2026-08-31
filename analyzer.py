@@ -360,6 +360,7 @@ def llm_summarize(top_candidates: list, settings) -> None:
             payload = {
                 "model": request_model,
                 "temperature": 0.1,
+                "thinking": {"type": "disabled"},
                 "messages": [{"role": "user", "content": message_content}],
             }
             try:
